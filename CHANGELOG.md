@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-23
+
 ### Added
 
 - **Diagnostics** button, report **Overview**: integration and Frigate versions, mode,
@@ -299,7 +301,8 @@ All notable changes to this project are documented here. The format follows
 - CI runs with a read-only `GITHUB_TOKEN`; the test-only TLS material stays
   out of the Docker build context.
 
-[Unreleased]: https://github.com/Terdious/gladys-frigate/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Terdious/gladys-frigate/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Terdious/gladys-frigate/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Terdious/gladys-frigate/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Terdious/gladys-frigate/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/LM1LC3N7/gladys-frigate/compare/v0.3.2...v0.3.3
