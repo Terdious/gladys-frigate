@@ -48,6 +48,7 @@ import { createMqttFeed } from '../frigate/mqttClient.js';
 import { probeMqtt } from '../frigate/mqttProbe.js';
 import { parseMessage } from '../frigate/topics.js';
 import { createWsFeed, readCameraActivity } from '../frigate/wsClient.js';
+import { adviceSentence, resourceAdvice } from '../frigate/managed/advice.js';
 import {
   MANAGED_TEXT,
   describeDetector,
@@ -142,6 +143,8 @@ export function createFeed({ config, client, trustStore }) {
  * @param {Function} [options.feedFactory] createFeed (tests)
  * @param {(transition: object) => void} [options.onTransition] eventEngine output
  * @param {(message: object) => void} [options.onMessage] every typed message
+ * @param {(topic: string, payload: unknown) => void} [options.onRawMessage] every
+ *   message of the feed as received, before typing (the debug buffer)
  * @param {(status: { state: string, error: Error | null }) => void} [options.onFeedStatus]
  * @param {(up: boolean) => void} [options.onFrigateStatus] HTTP read result
  * @param {(flapping: boolean) => void} [options.onFrigateFlapping]
@@ -166,6 +169,7 @@ export function createFrigateSession({
   feedFactory = createFeed,
   onTransition = () => {},
   onMessage = () => {},
+  onRawMessage = () => {},
   onFeedStatus = () => {},
   onFrigateStatus = () => {},
   onFrigateFlapping = () => {},
@@ -404,6 +408,12 @@ export function createFrigateSession({
     onFeedStatus(created.status);
     created.on('message', (topic, payload) => {
       if (feed === created) {
+        // A tap only: whatever it does, the message is routed.
+        try {
+          onRawMessage(topic, payload);
+        } catch (err) {
+          logger.debug?.(`Could not record a real-time message: ${err.message}`);
+        }
         route(topic, payload);
       }
     });
@@ -848,6 +858,14 @@ export function createFrigateSession({
         );
         if (managedMode) {
           parts.push(describeStorage(await client.getStats().catch(() => null)));
+          parts.push(
+            adviceSentence(
+              resourceAdvice({
+                cameras: capabilities.cameras.length,
+                detector: managed.decision?.kind,
+              }),
+            ),
+          );
         }
       } catch (err) {
         parts.push(describeError(err));
@@ -1033,6 +1051,21 @@ export function createFrigateSession({
     /** The configuration applied last (null before the first one). */
     get config() {
       return config;
+    },
+
+    /** The raw values of the configuration applied last. */
+    get rawConfig() {
+      return raw;
+    },
+
+    /** Frigate's last `available` announcement (null: unknown). */
+    get frigateOnline() {
+      return frigateOnline;
+    },
+
+    /** Frigate keeps dropping its broker connection. */
+    get flapping() {
+      return flapping;
     },
 
     /** The real-time feed (null before Frigate was read). */

@@ -81,6 +81,7 @@ function setup({
   onConnected,
   onTransition,
   onMessage,
+  onRawMessage,
   onFeedStatus,
   onFrigateStatus,
   onFrigateFlapping,
@@ -116,6 +117,7 @@ function setup({
     feedFactory,
     onTransition,
     onMessage,
+    onRawMessage,
     onFeedStatus,
     onFrigateStatus,
     onFrigateFlapping,
@@ -628,4 +630,30 @@ test('the PTZ of the ONVIF cameras is read with the configuration; a failure is 
   const other = { ...raw, frigate_url: frigate.url.replace('127.0.0.1', 'localhost') };
   await session.apply(normalizeConfig(other), other);
   assert.equal(session.capabilities.cameras[0].ptz, null);
+});
+
+test('every feed message reaches the raw tap before being typed, a failing tap changes nothing', async (t) => {
+  const raw = [];
+  const messages = [];
+  let fail = false;
+  const { session, feedFactory } = setup({
+    onRawMessage: (topic, payload) => {
+      raw.push([topic, String(payload)]);
+      if (fail) throw new Error('tap broken');
+    },
+    onMessage: (message) => messages.push(message.type),
+  });
+  t.after(() => session.close());
+  await apply(session);
+  const [feed] = feedFactory.created;
+  feed.emit('message', 'front/motion', Buffer.from('ON'));
+  feed.emit('message', 'unknown/topic/here/x', 'ignored by the parser');
+  fail = true;
+  feed.emit('message', 'front/motion', 'OFF');
+  assert.deepEqual(raw, [
+    ['front/motion', 'ON'],
+    ['unknown/topic/here/x', 'ignored by the parser'],
+    ['front/motion', 'OFF'],
+  ]);
+  assert.deepEqual(messages, ['motion', 'motion'], 'the feed semantics are unchanged');
 });

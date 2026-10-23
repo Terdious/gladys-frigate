@@ -389,6 +389,12 @@ test('managed: Test the connection describes the container, detector, retention 
   assert.match(answer.en, /Retention: continuous 2 d, alerts 7 d, detections 7 d, snapshots 14 d/);
   assert.match(answer.en, /Recordings: 1\.0 GB used of 10\.0 GB/);
   assert.match(answer.en, /internal port/);
+  // The fake Frigate has 2 cameras, detected on the CPU.
+  assert.match(
+    answer.en,
+    /Resources: 2 cameras: recommended shm 320 MB \(limit 512\), RAM 2048 MB \(limit 4096\)\./,
+  );
+  assert.match(answer.fr, /Ressources : 2 caméras : shm conseillée 320 Mo/);
 });
 
 test('remote mode: the managed buttons refuse, and no container is read', async (t) => {

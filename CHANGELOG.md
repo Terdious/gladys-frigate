@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Diagnostics** button, report **Overview**: integration and Frigate versions, mode,
+  real-time feed (broker or WebSocket, state, age of the last message,
+  flapping), cameras (camera / detection / skipped fps, `status/<role>`),
+  detectors (type, inference speed, stuck detection), storage (recordings,
+  cache, shared memory), pinned certificates (fingerprints), warnings, and in
+  managed mode the Frigate container (state, start time, host ports,
+  hardware), detector, retention, generated `config.yml`, whether the admin
+  password is set and the resource advice. No password, token or cookie in
+  it.
+- **Diagnostics** button, report **Last real-time messages**: the last 50 of the 200 MQTT
+  or WebSocket messages kept in memory, newest first, payloads cut at 2000
+  characters, images shown as `[binary, N bytes]`, credentials masked.
+- Managed mode: resource advice (shared memory 256 MB + 64 MB per extra
+  camera, memory 1 GB + 256 MB per camera, + 512 MB for CPU detection)
+  compared with the container limits (512 MB shm, 4 GB, 2 CPU), in the
+  diagnostics report and in **Test the connection**; beyond the limits it
+  advises the remote mode until the Gladys core allows machine-relative
+  limits.
+- **Propose a camera to the catalog** button: builds a pre-filled GitHub
+  issue link (brand, model, stream type, notes, versions; addresses and
+  passwords of the notes masked) that the user opens and submits; the
+  integration sends nothing.
+
 ## [0.4.1] - 2026-10-23
 
 ### Added

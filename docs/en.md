@@ -512,3 +512,52 @@ The connection status at the top of the Configuration tab says what is wrong;
 | A camera added before an update misses features     | The Discover tab shows **Update** on it.                                                                                                          |
 | "Frigate keeps dropping its MQTT connection"        | Another MQTT client uses Frigate's `mqtt.client_id` (`frigate` by default): give each its own. Meanwhile states and scenes miss events.           |
 | Renaming a camera or changing its room fails        | Fixed in 0.3.2: wait one minute after the update, so that the smaller image replaces the stored one, then save again.                             |
+
+### Diagnostics buttons
+
+Two buttons of the Configuration tab help when asking for help (forum,
+GitHub issue). **Diagnostics** has a **Report** choice:
+
+- **Diagnostics**, report **Overview** (the default): one text with the integration and Frigate
+  versions, the mode, whether Frigate answers, the real-time feed (MQTT
+  broker or Frigate WebSocket, its state, the age of the last message,
+  whether Frigate keeps dropping its broker connection), each camera (camera,
+  detection and skipped frames per second, the `status/<role>` Frigate 0.17+
+  publishes), the detectors (type, inference speed, a detection stuck), the
+  storage (recordings, cache, shared memory), the pinned certificates
+  (fingerprints only) and the warnings. In managed mode it adds the Frigate
+  container (state, wanted state, start time, host ports, hardware granted
+  and detected), the detector chosen, the retention, where the generated
+  `config.yml` is, whether the admin password is set (yes or no, never the
+  password) and the resource advice below.
+- **Diagnostics**, report **Last real-time messages (MQTT / WebSocket)**:
+  the last 50 messages Frigate sent
+  (out of the last 200 kept in memory since the integration started),
+  newest first, as `HH:MM:SS topic payload` in UTC. Payloads are cut at 2000
+  characters and images show as `[binary, N bytes]`. Handy to check that
+  Frigate publishes, and what: a camera that never appears, an object name.
+- **Propose a camera to the catalog**: type the brand, the model, the
+  stream type and notes (stream paths, settings that work), and the button
+  answers a link to a pre-filled GitHub issue on this repository. Open it in
+  your browser, review it and submit it with your GitHub account: the
+  integration sends nothing itself. The text carries the versions but no
+  address nor password; what looks like one in the notes is masked, check it
+  anyway.
+
+**Sharing safely**: the report and the messages never contain a password, a
+token, a cookie or the broker password. They do contain host names and IP
+addresses (Frigate, broker): mask them before posting publicly if you wish.
+
+**Resource advice (managed mode)**: Frigate keeps its decoded frames in
+shared memory. The integration advises 256 MB of it for one camera plus
+64 MB per extra camera, and about 1 GB of memory plus 256 MB per camera
+(512 MB more when detection runs on the CPU): a rule of thumb, not a
+measurement. Gladys gives the Frigate container fixed limits whatever the
+machine (512 MB of shared memory, 4 GB of memory, 2 CPU), so beyond 5
+cameras the advice says so; prefer the remote mode then, until the Gladys
+core allows limits relative to the machine (see `ROADMAP.md`, issues #12
+and #14). **Test the connection** shows the same advice in one line.
+
+**Frigate's own logs** (managed mode) are not in the integration logs: open
+the supervision block of the integration in Gladys, which shows the logs of
+the Frigate sub-container.

@@ -554,3 +554,57 @@ passe ni de jeton.
 | Une caméra ajoutée avant une mise à jour n'a pas tout   | L'onglet Découverte affiche **Mettre à jour** à côté d'elle.                                                                                                       |
 | « Frigate perd sans cesse sa connexion MQTT »           | Un autre client MQTT utilise le `mqtt.client_id` de Frigate (`frigate` par défaut) : donnez à chacun le sien. En attendant, états et scènes ratent des événements. |
 | Renommer une caméra ou changer sa pièce échoue          | Corrigé en 0.3.2 : attendez une minute après la mise à jour (la petite image remplace celle enregistrée), puis enregistrez de nouveau.                             |
+
+### Boutons de diagnostic
+
+Deux boutons de l'onglet Configuration aident à demander de l'aide (forum,
+ticket GitHub). **Diagnostic** propose un choix de **Rapport** :
+
+- **Diagnostic**, rapport **Vue d'ensemble** (par défaut) : un texte avec les versions de l'intégration et
+  de Frigate, le mode, si Frigate répond, le flux temps réel (broker MQTT ou
+  WebSocket de Frigate, son état, l'âge du dernier message, si Frigate perd
+  sans cesse sa connexion au broker), chaque caméra (images par seconde de
+  la caméra, de la détection et sautées, le `status/<rôle>` que publie
+  Frigate 0.17+), les détecteurs (type, vitesse d'inférence, détection
+  bloquée), le stockage (enregistrements, cache, mémoire partagée), les
+  certificats épinglés (empreintes seulement) et les avertissements. En mode
+  géré, il ajoute le conteneur Frigate (état, état souhaité, heure de
+  démarrage, ports hôte, matériel autorisé et détecté), le détecteur choisi,
+  la conservation, l'emplacement du `config.yml` généré, si le mot de passe
+  admin est défini (oui ou non, jamais le mot de passe) et le conseil de
+  ressources ci-dessous.
+- **Diagnostic**, rapport **Derniers messages temps réel (MQTT /
+  WebSocket)** : les 50 derniers messages
+  envoyés par Frigate (parmi les 200 derniers gardés en mémoire depuis le
+  démarrage de l'intégration), du plus récent au plus ancien, sous la forme
+  `HH:MM:SS topic contenu` en UTC. Les contenus sont coupés à 2000
+  caractères et les images affichées `[binary, N bytes]`. Pratique pour
+  vérifier que Frigate publie, et quoi : une caméra qui n'apparaît jamais, un
+  nom d'objet.
+- **Proposer une caméra au catalogue** : saisissez la marque, le modèle, le
+  type de flux et des notes (chemins de flux, réglages qui marchent), et le
+  bouton répond par un lien vers un ticket GitHub pré-rempli sur ce dépôt.
+  Ouvrez-le dans votre navigateur, relisez-le et envoyez-le avec votre
+  compte GitHub : l'intégration n'envoie rien elle-même. Le texte contient
+  les versions mais ni adresse ni mot de passe ; ce qui y ressemble dans les
+  notes est masqué, vérifiez tout de même.
+
+**Partager sans risque** : le rapport et les messages ne contiennent jamais
+de mot de passe, de jeton, de cookie ni le mot de passe du broker. Ils
+contiennent en revanche des noms d'hôte et des adresses IP (Frigate,
+broker) : masquez-les avant une publication si vous le souhaitez.
+
+**Conseil de ressources (mode géré)** : Frigate garde ses images décodées
+en mémoire partagée. L'intégration en conseille 256 Mo pour une caméra plus
+64 Mo par caméra supplémentaire, et environ 1 Go de mémoire plus 256 Mo par
+caméra (512 Mo de plus quand la détection tourne sur le CPU) : un ordre de
+grandeur, pas une mesure. Gladys donne au conteneur Frigate des limites
+fixes quelle que soit la machine (512 Mo de mémoire partagée, 4 Go de
+mémoire, 2 CPU) : au-delà de 5 caméras, le conseil le signale ; préférez
+alors le mode distant, tant que le core de Gladys ne permet pas des limites
+relatives à la machine (voir `ROADMAP.md`, issues #12 et #14). **Tester la
+connexion** affiche le même conseil en une ligne.
+
+**Les logs de Frigate** (mode géré) ne sont pas dans les logs de
+l'intégration : ouvrez le bloc de supervision de l'intégration dans Gladys,
+qui affiche les logs du sous-conteneur Frigate.
