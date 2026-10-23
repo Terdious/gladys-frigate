@@ -12,6 +12,8 @@ up.
   and configuration and only exposes what your Frigate actually enables.
 - Recommended: the MQTT broker Frigate publishes to. Without a broker, the
   integration falls back to the Frigate WebSocket.
+- No Frigate yet? Gladys can install and run it for you on a machine fit
+  for it: see "Frigate installed by Gladys (managed mode)".
 
 ## Quick start
 
@@ -24,6 +26,119 @@ up.
    broker connected". **Test the connection** gives the details.
 4. In the **Discover** tab, press **Add to Gladys** on your cameras.
 5. Create scenes with the **Frigate** triggers (see Scenes).
+
+## Frigate installed by Gladys (managed mode)
+
+No Frigate yet? Choose **Frigate installed by Gladys (managed)** in the
+**Deployment** section: Gladys runs Frigate 0.18 in a container of its own,
+next to the integration, and writes its configuration for you. Otherwise
+keep **Existing Frigate instance (remote)**, the behavior described in the
+rest of this page.
+
+### Prerequisites
+
+- A machine fit for video analysis: a recent x86 mini PC (Intel N100 or
+  better), ideally with a Google Coral or an Intel GPU. Frigate gets up to
+  4 GB of RAM and 2 CPUs. On a **Raspberry Pi or a NAS**, prefer an existing
+  Frigate on a separate machine (remote mode).
+- Disk space for the recordings: they live in the Gladys data folder (an SD
+  card wears out quickly under continuous recording — prefer an SSD).
+- The Frigate image (more than 1 GB) is downloaded when the integration is
+  installed, even if you never start it.
+
+### Hardware acceleration
+
+When installing the integration, Gladys lists the hardware the Frigate
+container may use — **Coral USB**, **Coral PCIe**, **GPU** (`/dev/dri`) —
+with what it detected. Grant what you have; you can change it later in the
+**Hardware** block of the integration (supervision controls): Gladys then
+recreates the Frigate container, and the integration regenerates the
+configuration and restarts Frigate.
+
+- **Object detector** (managed section): **Automatic** picks a Coral (USB,
+  then PCIe), then an Intel GPU (OpenVINO), else the CPU. An explicit choice
+  whose hardware is not granted or not detected falls back to the automatic
+  choice, and the status says so.
+- **GPU vendor**: the integration cannot read it from its container. Intel:
+  OpenVINO detection and VAAPI video decoding (`ffmpeg.hwaccel_args:
+preset-vaapi`); AMD: VAAPI decoding only, detection on CPU; None: the GPU
+  is not used. NVIDIA GPUs are not supported in managed mode.
+- CPU detection only works, slowly and CPU hungry: the status warns about
+  it.
+
+### Start, stop, restart
+
+1. Choose the managed mode, save. The status says "not started yet".
+2. Press **Start Frigate**: the integration writes the Frigate configuration,
+   then asks Gladys to start the container. The status follows: "starting…",
+   then "Connected to Frigate 0.18.0 (installed by Gladys)". The first start
+   can take a few minutes.
+3. Press **Show the Frigate credentials**: the address of the Frigate UI,
+   `https://<address of Gladys>:<port>` (the port Gladys assigned, also the
+   "Frigate UI" link of the supervision block and of the managed section),
+   and the `admin` account the integration created. The certificate is
+   self-signed: accept it in your browser. The answer is only shown to you.
+4. In the Frigate UI, add your cameras (its configuration editor), then **Refresh the cameras** and add them in
+   the Discover tab, as in remote mode. Camera management from Gladys comes
+   in a later version.
+
+**Stop Frigate** stops the container (Gladys will not restart it);
+**Restart Frigate** regenerates the configuration and restarts it. Saving the
+configuration of the integration applies the managed settings at once: a
+running Frigate restarts only when its configuration actually changes.
+
+### Configuration and data
+
+The integration only writes the parts of `config.yml` it owns; everything
+you set in the Frigate UI (cameras, zones, masks, go2rtc streams, users) is
+kept:
+
+- `mqtt`: disabled, or the broker of the **Real-time feed** section — Frigate
+  then publishes to that broker **with the same account** as the
+  integration: its ACL then needs `topic readwrite frigate/#`. The
+  broker password goes to Frigate through its container environment, never
+  in `config.yml`. MQTT over TLS: Frigate only accepts a broker certificate
+  signed by a public authority, or by the authority pasted in the expert
+  settings (a self-signed broker needs it there; a pinned fingerprint does
+  not apply to Frigate). Without a broker, the integration uses the Frigate
+  WebSocket.
+- `detectors` (and the OpenVINO `model` section it needs), and
+  `ffmpeg.hwaccel_args` when VAAPI applies and you wrote no `ffmpeg` section.
+  In automatic mode, a `detectors` section you wrote yourself is kept.
+- The retention of the recordings: **continuous** (2 days by default),
+  **alerts** (7), **detections** (7) and **snapshots** (14); 0 = none. A value
+  saved in Gladys wins; empty a field to keep the value set in the Frigate
+  UI.
+
+Where the data lives, in the data folder of the integration
+(`/data/containers/frigate/…` seen from the integration):
+
+| Folder          | Content                                          |
+| --------------- | ------------------------------------------------ |
+| `config`        | `config.yml`, Frigate's database (users, events) |
+| `media/frigate` | recordings, clips and snapshots                  |
+| `tmp/cache`     | recording segments being written                 |
+
+`/tmp/cache` is a disk folder, not memory: the Gladys sandbox mounts a 64 MB
+`/tmp` in RAM, too small for Frigate's cache. The integration keeps the admin
+password in its own `managed/state.json` (readable by it only). Uninstalling
+the integration deletes all of it, recordings included.
+
+### When Frigate does not stay up
+
+The Gladys sandbox applies the same limits to Frigate as to any integration
+container: at most **100 processes and threads**, a 64 MB `/tmp`, **no Linux
+capabilities**, three published ports. Frigate (ffmpeg per camera, go2rtc,
+nginx, Python workers) may not start or may stop under these limits. The
+status then says "Frigate does not stay up" (the container keeps
+restarting) or "has not answered for 5 min". What to do:
+
+- **Restart Frigate** once, and look at the logs of the integration.
+- Fewer cameras, or a Coral instead of CPU detection, use fewer processes.
+- Gladys counts the crashes: after five, it stops the whole integration.
+- If it persists, use an existing Frigate on a machine of its own (remote
+  mode): the limits are being lifted in Gladys (sandbox settings for
+  sub-containers).
 
 ## Frigate connection
 
@@ -316,6 +431,12 @@ enabled" feature off) does not play live, as in Frigate.
 - **Trust the new certificate**: forgets the pinned certificates of Frigate
   and of the broker, reconnects, and shows the fingerprint now pinned.
   Compare it with the one of your Frigate (command above) when in doubt.
+- **Start Frigate**, **Stop Frigate**, **Restart Frigate**, **Show the
+  Frigate credentials**: managed mode only (see "Frigate installed by
+  Gladys"); in remote mode they answer that they do not apply. In managed
+  mode, **Test the connection** also shows the state of the Frigate
+  container, the detector, the retention and the space used by the
+  recordings.
 
 When Frigate cannot be reached, the integration tries again every minute. A
 refused certificate or refused credentials wait for you instead: retrying
@@ -335,6 +456,11 @@ would only lock the account out (Frigate limits failed logins).
 - Passwords, tokens and cookies never appear in the logs or the status.
 - Port 5000 and MQTT without TLS work, with a warning in the status: use them
   only on a network you trust.
+- Managed mode: the integration reaches Frigate on its internal port 5000
+  over the private network of the integration only (never published on your
+  network); you reach the Frigate UI on its authenticated port, with the
+  `admin` account the integration created. Only the UI and the go2rtc RTSP
+  restream are published, on ports Gladys chooses.
 
 ## Troubleshooting
 
@@ -344,6 +470,9 @@ The connection status at the top of the Configuration tab says what is wrong;
 
 | Symptom                                             | What to check                                                                                                                                     |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Frigate does not stay up" (managed mode)           | The Gladys sandbox limits (100 processes, 64 MB `/tmp`, no capabilities): see "When Frigate does not stay up". Remote mode works around them.     |
+| "not started yet" (managed mode)                    | Press **Start Frigate**; Frigate never starts by itself the first time.                                                                           |
+| The managed status says "no Frigate sub-container"  | Update Gladys and the integration (sub-containers need Gladys 5.1 or later), or choose the remote mode.                                           |
 | "The certificate of … changed"                      | Frigate reinstalled or certificate regenerated: press **Trust the new certificate**. Otherwise, someone may be impersonating Frigate.             |
 | "Frigate refused the username or the password"      | The account of the Configuration tab. After several failures Frigate blocks logins for a while: the integration does not retry by itself.         |
 | The Discover tab is empty                           | The status: Frigate must be reachable. Then **Scan**.                                                                                             |

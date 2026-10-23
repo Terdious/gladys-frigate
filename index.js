@@ -16,6 +16,7 @@ import { cameraNameOfDevice, publishDiscovery } from './src/gladys/discovery.js'
 import { createFrigateSession } from './src/gladys/frigateSession.js';
 import { createCameraImages, createDeviceImages } from './src/gladys/images.js';
 import { MANIFEST_ACTIONS, SCENE_ACTIONS } from './src/gladys/keys.js';
+import { createManagedFrigate, rtspHostPort } from './src/gladys/managed.js';
 import { resolveLiveRtsp } from './src/gladys/live.js';
 import { describeTransition } from './src/gladys/messages.js';
 import { createSceneEvents, createSnapshotAction } from './src/gladys/sceneEvents.js';
@@ -27,11 +28,20 @@ const trustStore = new TrustStore({ filePath: join(dataDir, 'tls-trust.json'), l
 const gladys = new GladysIntegration();
 // The device side reads the session lazily (the arrows run after start-up).
 const zoneSensors = () => session.config?.zone_sensors === true;
-// Managed-mode hook: the host port Gladys assigned to the `frigate_rtsp` port
-// of the Frigate sub-container (read from `getContainers`). The managed-mode
-// code replaces this getter; until then the port is unknown, so a managed
-// configuration publishes no live URL (remote mode needs no port from Gladys).
-const managedLiveHostPort = () => null;
+// Managed mode: Frigate as the `frigate` sub-container. FRIGATE_MANAGED_URL
+// replaces its internal address (http://frigate:5000) for development and
+// the end-to-end test only.
+const managed = createManagedFrigate({
+  gladys,
+  logger,
+  dataDir,
+  ...(process.env.FRIGATE_MANAGED_URL ? { url: process.env.FRIGATE_MANAGED_URL } : {}),
+});
+// The host port Gladys assigned to the `frigate_rtsp` port of the Frigate
+// sub-container, from the last `getContainers` read of the session (null
+// before the first start, or in remote mode, which needs no port from Gladys).
+const managedLiveHostPort = () => rtspHostPort(session.container);
+let publishedLivePort = null;
 // The live URL is resolved on every publication: Gladys upserts the params of
 // already-created devices, so a new host or port reaches them.
 const discover = (capabilities) =>
@@ -74,6 +84,20 @@ const session = createFrigateSession({
   gladys,
   trustStore,
   logger,
+  managed,
+  // The live URL of a managed Frigate needs the host port of its restream:
+  // once Gladys assigns it, the discovery is published again so the
+  // CAMERA_URL param reaches the devices already created.
+  onContainer: (container) => {
+    const port = rtspHostPort(container);
+    if (port === publishedLivePort) return;
+    publishedLivePort = port;
+    if (session.capabilities) {
+      discover(session.capabilities).catch((err) =>
+        logger.warn(`Could not publish the Frigate cameras to Gladys: ${err.message}`),
+      );
+    }
+  },
   // Every successful read of Frigate refreshes the Discover tab.
   onConnected: discover,
   onFrigateStatus: (up) => deviceSync.frigateUp(up),
@@ -111,6 +135,12 @@ gladys.onSceneAction(
 gladys.onAction(MANIFEST_ACTIONS.TEST_CONNECTION, () => session.testConnection());
 gladys.onAction(MANIFEST_ACTIONS.REFRESH_CAMERAS, () => session.refreshCameras());
 gladys.onAction(MANIFEST_ACTIONS.RESET_CERTIFICATE, () => session.resetCertificate());
+gladys.onAction(MANIFEST_ACTIONS.START_FRIGATE, () => session.startFrigate());
+gladys.onAction(MANIFEST_ACTIONS.STOP_FRIGATE, () => session.stopFrigate());
+gladys.onAction(MANIFEST_ACTIONS.RESTART_FRIGATE, () => session.restartFrigate());
+gladys.onAction(MANIFEST_ACTIONS.SHOW_CREDENTIALS, () => session.showCredentials());
+// The user changed the hardware grants of the sub-container: new detector.
+gladys.onHardwareUpdated((containers) => session.hardwareUpdated(containers));
 
 gladys.handleShutdown(async (signal) => {
   logger.info(`Received ${signal} -> graceful shutdown`);

@@ -10,7 +10,14 @@
 
 import { X509Certificate } from 'node:crypto';
 
+export const MODES = Object.freeze({ REMOTE: 'remote', MANAGED: 'managed' });
+export const DETECTORS = Object.freeze(['auto', 'coral', 'openvino', 'cpu']);
+export const GPU_VENDORS = Object.freeze(['intel', 'amd', 'none']);
+
 export const DEFAULT_CONFIG = Object.freeze({
+  // `remote`: an existing Frigate (the upstream behavior, unchanged);
+  // `managed`: Frigate run by Gladys as the `frigate` sub-container.
+  mode: MODES.REMOTE,
   frigate_url: '',
   username: '',
   password: '',
@@ -27,6 +34,13 @@ export const DEFAULT_CONFIG = Object.freeze({
   // of the Frigate URL, or 127.0.0.1 in managed mode (src/gladys/live.js).
   live_rtsp_host: '',
   live_rtsp_port: 8554,
+  // Managed mode only.
+  detector: 'auto',
+  gpu_vendor: 'intel',
+  record_continuous_days: 2,
+  record_alerts_days: 7,
+  record_detections_days: 7,
+  snapshots_retain_days: 14,
   // Expert TLS settings, both optional. Without them, a certificate signed by
   // a public authority is verified normally and a self-signed one (Frigate's
   // default on port 8971) is trusted on first use, then pinned.
@@ -38,6 +52,11 @@ const PEM_BLOCK = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE----
 
 function text(value) {
   return value == null ? '' : String(value).trim();
+}
+
+function choice(value, choices, fallback) {
+  const chosen = text(value);
+  return choices.includes(chosen) ? chosen : fallback;
 }
 
 function integer(value, fallback, min, max) {
@@ -79,12 +98,21 @@ export function normalizeFingerprint(raw) {
   return hex.length === 64 ? hex.match(/.{2}/g).join(':') : '';
 }
 
+const MAX_DAYS = 3650;
+const RETENTION_FIELDS = [
+  'record_continuous_days',
+  'record_alerts_days',
+  'record_detections_days',
+  'snapshots_retain_days',
+];
+
 /**
  * Merge the raw user configuration with the defaults.
  * @param {Record<string, unknown>} [raw] configuration returned by the SDK
  */
 export function normalizeConfig(raw = {}) {
   return {
+    mode: choice(raw.mode, Object.values(MODES), DEFAULT_CONFIG.mode),
     frigate_url: text(raw.frigate_url).replace(/\/+$/, ''),
     username: text(raw.username),
     password: raw.password == null ? '' : String(raw.password),
@@ -100,8 +128,35 @@ export function normalizeConfig(raw = {}) {
     zone_sensors: raw.zone_sensors === true,
     live_rtsp_host: text(raw.live_rtsp_host),
     live_rtsp_port: integer(raw.live_rtsp_port, DEFAULT_CONFIG.live_rtsp_port, 1, 65535),
+    detector: choice(raw.detector, DETECTORS, DEFAULT_CONFIG.detector),
+    gpu_vendor: choice(raw.gpu_vendor, GPU_VENDORS, DEFAULT_CONFIG.gpu_vendor),
+    ...Object.fromEntries(
+      RETENTION_FIELDS.map((key) => [key, integer(raw[key], DEFAULT_CONFIG[key], 0, MAX_DAYS)]),
+    ),
     tls_fingerprint: normalizeFingerprint(raw.tls_fingerprint),
     tls_ca: normalizePem(raw.tls_ca),
+  };
+}
+
+/** True when Frigate is the sub-container run by Gladys. */
+export function isManaged(config) {
+  return config?.mode === MODES.MANAGED;
+}
+
+/**
+ * The retention days the user saved in Gladys, null for a field never saved
+ * (or emptied): config.yml then keeps the days set in the Frigate UI.
+ * @param {Record<string, unknown>} [raw]
+ * @returns {{ continuous: number | null, alerts: number | null,
+ *   detections: number | null, snapshots: number | null }}
+ */
+export function explicitRetention(raw = {}) {
+  const read = (key) => (text(raw[key]) === '' ? null : integer(raw[key], null, 0, MAX_DAYS));
+  return {
+    continuous: read('record_continuous_days'),
+    alerts: read('record_alerts_days'),
+    detections: read('record_detections_days'),
+    snapshots: read('snapshots_retain_days'),
   };
 }
 
@@ -136,6 +191,17 @@ function isBareHost(host) {
  * @returns {{ en: string, fr: string } | null} a user-facing error, or null
  */
 export function validateConfig(config, raw = {}) {
+  // Managed: the integration reaches its own Frigate on the private network,
+  // without URL nor account to enter.
+  const error = isManaged(config) ? null : validateRemote(config);
+  if (error) {
+    return error;
+  }
+  return validateCommon(config, raw);
+}
+
+/** The Frigate URL and account of the remote mode. */
+function validateRemote(config) {
   if (!config.frigate_url) {
     return {
       en: 'Enter the URL of your Frigate server.',
@@ -161,6 +227,11 @@ export function validateConfig(config, raw = {}) {
       fr: "Renseignez l'utilisateur et le mot de passe Frigate, ou laissez les deux vides.",
     };
   }
+  return null;
+}
+
+/** The TLS and MQTT settings, shared by both modes. */
+function validateCommon(config, raw) {
   if (text(raw.tls_fingerprint) && !config.tls_fingerprint) {
     return {
       en: 'The certificate fingerprint must be a SHA-256 (64 hexadecimal characters).',
@@ -218,14 +289,15 @@ export function validateConfig(config, raw = {}) {
  */
 export function configWarnings(config) {
   const warnings = [];
-  const url = parseUrl(config.frigate_url);
-  if (!url) return warnings;
-  if (url.protocol === 'http:' && !config.username) {
+  // Managed: port 5000 is only reachable on the private network of the
+  // integration, so it carries no warning.
+  const url = isManaged(config) ? null : parseUrl(config.frigate_url);
+  if (url?.protocol === 'http:' && !config.username) {
     warnings.push({
       en: 'Unauthenticated Frigate port (5000): anyone on the network has admin access. Prefer port 8971.',
       fr: "Port Frigate non authentifié (5000) : n'importe qui sur le réseau a un accès admin. Préférez le port 8971.",
     });
-  } else if (url.protocol === 'http:') {
+  } else if (url?.protocol === 'http:') {
     warnings.push({
       en: 'The Frigate password travels unencrypted over HTTP. Prefer https:// on port 8971.',
       fr: 'Le mot de passe Frigate circule en clair en HTTP. Préférez https:// sur le port 8971.',
@@ -235,6 +307,14 @@ export function configWarnings(config) {
     warnings.push({
       en: 'The MQTT password travels unencrypted: enable TLS on the broker if it is not on a trusted network.',
       fr: "Le mot de passe MQTT circule en clair : activez TLS sur le broker s'il n'est pas sur un réseau de confiance.",
+    });
+  }
+  // Frigate (paho-mqtt) verifies the broker certificate against authorities
+  // only: no trust on first use, no pinned fingerprint.
+  if (isManaged(config) && usesMqtt(config) && config.mqtt_tls && !config.tls_ca) {
+    warnings.push({
+      en: 'MQTT over TLS: Frigate only trusts a broker certificate signed by a public authority or by the authority of the expert settings (a self-signed broker needs it there).',
+      fr: "MQTT sur TLS : Frigate n'approuve qu'un certificat de broker signé par une autorité publique ou par l'autorité des réglages experts (un broker auto-signé doit l'y avoir).",
     });
   }
   return warnings;

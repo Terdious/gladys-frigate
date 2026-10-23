@@ -7,7 +7,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { DEFAULT_CONFIG } from '../src/config.js';
+import { DEFAULT_CONFIG, DETECTORS, GPU_VENDORS, MODES } from '../src/config.js';
+import {
+  CONTAINER_NAME,
+  FRIGATE_IMAGE,
+  RETENTION_DEFAULTS,
+  RTSP_PORT_NAME,
+  UI_PORT_NAME,
+} from '../src/frigate/managed/constants.js';
+import {
+  DETECTOR_CHOICES,
+  GPU_VENDORS as DETECTOR_GPU_VENDORS,
+  HARDWARE_CLASSES,
+} from '../src/frigate/managed/detector.js';
 import { MANIFEST_ACTIONS, SCENE_ACTIONS, SCENE_TRIGGERS } from '../src/gladys/keys.js';
 
 const manifest = JSON.parse(
@@ -73,6 +85,18 @@ test('scene action keys are frozen', () => {
     manifest.scene_actions.map((a) => a.key),
     Object.values(SCENE_ACTIONS),
   );
+});
+
+test('manifest action keys are frozen', () => {
+  assert.deepEqual(Object.values(MANIFEST_ACTIONS), [
+    'test_connection',
+    'refresh_cameras',
+    'reset_certificate',
+    'start_frigate',
+    'stop_frigate',
+    'restart_frigate',
+    'show_credentials',
+  ]);
 });
 
 test('manifest action keys match the code', () => {
@@ -146,4 +170,70 @@ test('every scene action has a handler, every trigger is published (index.js)', 
   for (const name of Object.keys(SCENE_TRIGGERS)) {
     assert.match(scenes, new RegExp(`SCENE_TRIGGERS\\.${name}\\b`), `${name} is published`);
   }
+});
+
+// ---- Managed mode: the `frigate` sub-container and its settings ----------
+
+const frigateContainer = () => manifest.containers.find((c) => c.name === CONTAINER_NAME);
+
+test('the Frigate sub-container is declared as the code expects', () => {
+  assert.equal(manifest.containers.length, 1);
+  const container = frigateContainer();
+  assert.equal(container.docker_image, FRIGATE_IMAGE, 'one Frigate version, code and manifest');
+  assert.equal(container.start, 'manual', 'started by the "Start Frigate" button only');
+  assert.equal(container.read_only, false, 'Frigate does not run on a read-only rootfs');
+  // /tmp/cache on disk: the core mounts a 64 MB tmpfs on /tmp.
+  assert.deepEqual(container.volumes, ['/config', '/media/frigate', '/tmp/cache']);
+  assert.deepEqual(container.devices, [...HARDWARE_CLASSES]);
+  assert.deepEqual(
+    container.ports.map((port) => [port.container_port, port.name, port.browsable !== false]),
+    [
+      [8971, UI_PORT_NAME, true],
+      [8554, RTSP_PORT_NAME, false],
+    ],
+  );
+  assert.equal(container.env, undefined, 'never a secret in the public manifest');
+});
+
+test('every {{port:<name>}} of the section texts names a declared port', () => {
+  const names = new Set(manifest.containers.flatMap((c) => (c.ports ?? []).map((p) => p.name)));
+  const sections = manifest.config_schema.filter((f) => f.type === 'section');
+  const tokens = sections.flatMap((section) =>
+    [section.label, section.description]
+      .flatMap((text) => Object.values(text ?? {}))
+      .flatMap((text) => [...text.matchAll(/\{\{port:([a-z0-9_]+)\}\}/g)].map((m) => m[1])),
+  );
+  assert.ok(tokens.includes(UI_PORT_NAME), 'the managed section shows the Frigate UI address');
+  for (const token of tokens) assert.ok(names.has(token), `{{port:${token}}} is declared`);
+});
+
+test('the select fields offer exactly the values the code knows', () => {
+  const options = (key) => valueFields.find((f) => f.key === key).options.map((o) => o.value);
+  assert.deepEqual(options('mode'), Object.values(MODES));
+  assert.deepEqual(options('detector'), [...DETECTORS]);
+  assert.deepEqual(options('detector'), [...DETECTOR_CHOICES]);
+  assert.deepEqual(options('gpu_vendor'), [...GPU_VENDORS]);
+  assert.deepEqual(options('gpu_vendor'), [...DETECTOR_GPU_VENDORS]);
+  assert.equal(valueFields.find((f) => f.key === 'mode').default, 'remote', 'remote by default');
+});
+
+test('the retention defaults of the manifest are the ones config.yml gets', () => {
+  assert.deepEqual(
+    {
+      continuous: DEFAULT_CONFIG.record_continuous_days,
+      alerts: DEFAULT_CONFIG.record_alerts_days,
+      detections: DEFAULT_CONFIG.record_detections_days,
+      snapshots: DEFAULT_CONFIG.snapshots_retain_days,
+    },
+    { ...RETENTION_DEFAULTS },
+  );
+});
+
+test('the Frigate URL is not required by the form (managed mode has none)', () => {
+  assert.notEqual(valueFields.find((f) => f.key === 'frigate_url').required, true);
+});
+
+test('index.js follows the hardware grants of the sub-container', async () => {
+  const index = await readFile(new URL('../index.js', import.meta.url), 'utf8');
+  assert.match(index, /gladys\.onHardwareUpdated\(/);
 });

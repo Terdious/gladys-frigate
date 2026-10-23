@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Managed mode: choose "Frigate installed by Gladys (managed)" in the new
+  Deployment section and Gladys runs Frigate 0.18 as a sub-container of the
+  integration, started by the new **Start Frigate** button (also **Stop
+  Frigate**, **Restart Frigate**). The integration writes Frigate's
+  `config.yml` (MQTT on the broker of the Real-time feed section, or off;
+  detector; retention) and keeps everything set in the Frigate UI, talks to
+  Frigate on its internal port, and follows the container in the connection
+  status (not started, starting, stopped, does not stay up because of the
+  Gladys sandbox limits). The remote mode is unchanged and stays the default.
+- Managed mode: Frigate's admin password is set by the integration; **Show
+  the Frigate credentials** gives the Frigate UI address and the login.
+- Managed mode: object detector from the hardware granted to Frigate (Coral
+  USB or PCIe, Intel GPU with OpenVINO, else CPU with a warning), VAAPI video
+  decoding on Intel and AMD GPUs, an explicit detector choice and the GPU
+  vendor in the configuration; a change of the hardware grants regenerates
+  the configuration and restarts Frigate.
+- Managed mode: recording retention from Gladys (continuous, alerts,
+  detections, snapshots; 0 = none), the days set in the Frigate UI being
+  kept when the field is empty; **Test the connection** shows the container,
+  the detector, the retention and the space used by the recordings.
 - Live view: the ⏵ button of the dashboard Camera widget plays a Frigate
   camera, at home and through Gladys Plus. Each camera device now carries the
   address of the Frigate go2rtc restream (`rtsp://<Frigate host>:8554/<camera>`),
@@ -26,6 +46,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The Frigate URL is no longer a required field of the form, since the
+  managed mode has none; the remote mode still refuses to connect without it.
 - Fork of LM1LC3N7/gladys-frigate: the image is published as
   `ghcr.io/terdious/gladys-frigate`; roadmap of the managed mode (Frigate as a
   Gladys sub-container), camera management, live view, PTZ and diagnostics in

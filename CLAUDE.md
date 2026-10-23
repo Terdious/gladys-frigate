@@ -23,7 +23,8 @@ decisions, which still hold.
   (ESLint enforces it); `src/gladys/` is a thin adapter; `index.js` only
   wires.
 - Runtime dependencies are limited to `@gladysassistant/integration-sdk`,
-  `mqtt`, `undici`. Ask before adding one. Images are resized by Frigate
+  `mqtt`, `undici` and `yaml` (managed mode: Frigate's config.yml, approved
+  for 0.4.0). Ask before adding one. Images are resized by Frigate
   (`height` / `quality` of its image endpoints): no image library.
 - Container limits: 256 MB RAM, 0.5 CPU, read-only rootfs, only `/data`
   writable, bridge network (unicast to the LAN only).

@@ -74,3 +74,29 @@ export class MqttRefusedError extends FrigateError {
     this.code = code;
   }
 }
+
+/**
+ * The managed-mode Frigate configuration file cannot be generated.
+ * `code`: 'invalid_yaml' (the file does not parse) | 'not_a_map' (its root
+ * is not a mapping) | 'write_failed' (the folder is not writable).
+ */
+export class ManagedConfigError extends FrigateError {
+  constructor(code, options) {
+    super(`The Frigate configuration file cannot be generated (${code})`, options);
+    this.code = code;
+  }
+}
+
+/**
+ * Frigate refused, or never answered, the admin password bootstrap of the
+ * managed mode. `status` is the last HTTP status (null: no answer).
+ */
+export class AdminBootstrapError extends FrigateError {
+  constructor(status, options) {
+    super(
+      `The Frigate admin password could not be set (${status == null ? 'no answer' : `HTTP ${status}`})`,
+      options,
+    );
+    this.status = status;
+  }
+}

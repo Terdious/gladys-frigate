@@ -22,4 +22,11 @@ export const MANIFEST_ACTIONS = Object.freeze({
   // Forget the certificates pinned on first use (Frigate and broker): the next
   // connection trusts and pins the certificate it is served.
   RESET_CERTIFICATE: 'reset_certificate',
+  // Managed mode (Frigate as the `frigate` sub-container).
+  START_FRIGATE: 'start_frigate',
+  STOP_FRIGATE: 'stop_frigate',
+  RESTART_FRIGATE: 'restart_frigate',
+  // The Frigate UI address and its admin account: the result of an action
+  // is only shown to the admin who pressed the button.
+  SHOW_CREDENTIALS: 'show_credentials',
 });
