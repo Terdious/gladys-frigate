@@ -228,18 +228,30 @@ the integration deletes all of it, recordings included.
 ### When Frigate does not stay up
 
 The Gladys sandbox applies the same limits to Frigate as to any integration
-container: at most **100 processes and threads**, a 64 MB `/tmp`, **no Linux
-capabilities**, three published ports. Frigate (ffmpeg per camera, go2rtc,
-nginx, Python workers) may not start or may stop under these limits. The
-status then says "Frigate does not stay up" (the container keeps
-restarting) or "has not answered for 5 min". What to do:
+container: **no Linux capability**, at most **100 processes and threads**, a
+64 MB `/tmp`, three published ports. As of Gladys 5.2, **Frigate cannot run
+under these limits**; the status says "has not answered for 5 min" or
+"Frigate does not stay up", and the **Logs** tab, container `frigate`, shows
+one of these two symptoms (both observed on a real installation):
 
-- **Restart Frigate** once, and look at the logs of the integration.
+- `chown: changing ownership of '/dev/shm/logs/frigate': Operation not
+permitted` then `unable to start service log-prepare`: Frigate's init
+  (s6-overlay) needs the ordinary Linux capabilities Docker grants by default
+  (`CHOWN`, `SETUID`, `SETGID`, `FOWNER`…), all removed by the sandbox;
+- `nginx: pthread_create() failed (11: Resource temporarily unavailable)`,
+  `OpenBLAS blas_thread_init: pthread_create failed`, Python `EOFError`:
+  the 100-process limit (threads included) is reached before the first camera.
+
+Two changes of the Gladys core lift them, both proposed from this project
+(bounded `capabilities` granted by the user at install, and a bounded
+`pids_limit`, see `ROADMAP.md` and issue #12): until a Gladys release ships
+them, use an existing Frigate on a machine of its own (**remote mode**), or
+check the progress on the issue. The `/tmp` limit is already worked around
+(recordings cache on a disk volume). What else helps once Frigate runs:
+
+- **Restart Frigate** once after a change of the configuration.
 - Fewer cameras, or a Coral instead of CPU detection, use fewer processes.
 - Gladys counts the crashes: after five, it stops the whole integration.
-- If it persists, use an existing Frigate on a machine of its own (remote
-  mode): the limits are being lifted in Gladys (sandbox settings for
-  sub-containers).
 
 ## Frigate connection
 

@@ -246,22 +246,35 @@ supprime tout, enregistrements compris.
 ### Frigate ne reste pas démarré
 
 Le bac à sable de Gladys applique à Frigate les mêmes limites qu'à tout
-conteneur d'intégration : **100 processus et threads** au plus, un `/tmp` de
-64 Mo, **aucune capability Linux**, trois ports publiés. Frigate (un ffmpeg
-par caméra, go2rtc, nginx, des workers Python) peut ne pas démarrer ou
-s'arrêter sous ces limites. Le statut indique alors « Frigate ne reste pas
-démarré » (le conteneur redémarre sans cesse) ou « ne répond pas depuis
-5 min ». Que faire :
+conteneur d'intégration : **aucune capability Linux**, au plus **100 processus
+et threads**, un `/tmp` de 64 Mo, trois ports publiés. Avec Gladys 5.2,
+**Frigate ne peut pas tourner sous ces limites** ; le statut indique « ne
+répond pas depuis 5 min » ou « Frigate ne reste pas démarré », et l'onglet
+**Journaux**, conteneur `frigate`, montre l'un de ces deux symptômes (tous
+deux observés sur une installation réelle) :
 
-- **Redémarrer Frigate** une fois, et consulter les journaux de
-  l'intégration.
-- Moins de caméras, ou un Coral plutôt que la détection sur CPU, utilisent
-  moins de processus.
-- Gladys compte les plantages : au bout de cinq, il arrête toute
-  l'intégration.
-- Si cela persiste, utilisez un Frigate existant sur une machine à part (mode
-  distant) : ces limites sont en cours d'assouplissement dans Gladys
-  (réglages du bac à sable des sous-conteneurs).
+- `chown: changing ownership of '/dev/shm/logs/frigate': Operation not
+permitted` puis `unable to start service log-prepare` : l'init de Frigate
+  (s6-overlay) a besoin des capabilities Linux ordinaires que Docker accorde
+  par défaut (`CHOWN`, `SETUID`, `SETGID`, `FOWNER`…), toutes retirées par le
+  bac à sable ;
+- `nginx: pthread_create() failed (11: Resource temporarily unavailable)`,
+  `OpenBLAS blas_thread_init: pthread_create failed`, `EOFError` Python : la
+  limite de 100 processus (threads compris) est atteinte avant la première
+  caméra.
+
+Deux évolutions du core Gladys les lèvent, toutes deux proposées depuis ce
+projet (`capabilities` bornées accordées par l'utilisateur à l'installation,
+et `pids_limit` borné, voir `ROADMAP.md` et l'issue #12) : tant qu'une version
+de Gladys ne les embarque pas, utilisez un Frigate existant sur une machine
+dédiée (**mode distant**), ou suivez l'avancement sur l'issue. La limite du
+`/tmp` est déjà contournée (cache des enregistrements sur un volume disque).
+Ce qui aide ensuite, une fois Frigate démarré :
+
+- **Redémarrer Frigate** une fois après un changement de configuration.
+- Moins de caméras, ou un Coral plutôt que la détection CPU, consomment moins
+  de processus.
+- Gladys compte les plantages : au cinquième, il arrête toute l'intégration.
 
 ## Connexion à Frigate
 
