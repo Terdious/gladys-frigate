@@ -38,6 +38,9 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
 - **Scene triggers** (keys final, never renamed): `review_alert`,
   `object_detected`, `object_entered_zone`. **Scene action**:
   `attach_event_snapshot`.
+- **PTZ** of the cameras Frigate drives over ONVIF: a `move` command (only
+  the movements the camera supports, stopped automatically after 1.5 s) and
+  a `preset` command (its ONVIF presets), shown by the dashboard widgets.
 - **Real-time feed** from the Frigate MQTT broker, or from the Frigate
   WebSocket when no broker is configured.
 - **Security**: authenticated port 8971 with a dedicated (viewer) account,
@@ -46,8 +49,8 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   fingerprint or custom CA; no secret
   in logs or URLs.
 
-Out of v1: PTZ, faces and plates, classification, widgets, profiles,
-multiple Frigate instances, sub-containers.
+Out of scope for now: faces and plates, classification, widgets, profiles,
+multiple Frigate instances, sub-containers (see [`ROADMAP.md`](./ROADMAP.md)).
 
 ## Architecture
 
@@ -59,6 +62,8 @@ src/frigate/      Frigate client — NO Gladys dependency (enforced by ESLint)
   tlsConnector.js   TLS sockets applying that policy before any byte is sent (HTTP, MQTT)
   httpClient.js     undici client: auth (probe, login, Bearer, renewal), timeouts, retries
   capabilities.js   /api/version + /api/config -> normalized cameras & features
+                    (+ /api/<camera>/ptz/info for the ONVIF cameras)
+  ptz.js            Gladys movement values -> Frigate PTZ payloads, supported moves
   mqttStream.js     MQTT transport (TLS trust before the CONNECT), shared by the two below
   mqttProbe.js      one-shot broker check ("Test the connection")
   mqttClient.js     real-time feed from the broker: reconnection, resubscription
@@ -72,7 +77,7 @@ src/gladys/       thin adapter to the Gladys SDK
                     resync when Frigate is back, MQTT flapping report
   discovery.js      Frigate cameras -> Gladys devices (Discover tab)
   images.js         camera images (resized by Frigate): 60 KB stored, 150 KB live
-  deviceSync.js     states, commands (confirmed by Frigate), polls, badges
+  deviceSync.js     states, commands (confirmed by Frigate), PTZ (1.5 s watchdog), polls, badges
   cameraStates.js   typed messages -> feature states
   statePublisher.js dedupe, batches, rate limit of the states sent to Gladys
   transports.js     per-camera badge (unreachable / degraded), debounced

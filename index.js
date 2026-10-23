@@ -27,7 +27,7 @@ const gladys = new GladysIntegration();
 // The device side reads the session lazily (the arrows run after start-up).
 const zoneSensors = () => session.config?.zone_sensors === true;
 const discover = (capabilities) =>
-  publishDiscovery(gladys, capabilities, { zoneSensors: zoneSensors() });
+  publishDiscovery(gladys, capabilities, { zoneSensors: zoneSensors(), logger });
 
 const cameraImages = createCameraImages({
   getClient: () => session.client,
@@ -102,7 +102,8 @@ gladys.onAction(MANIFEST_ACTIONS.RESET_CERTIFICATE, () => session.resetCertifica
 
 gladys.handleShutdown(async (signal) => {
   logger.info(`Received ${signal} -> graceful shutdown`);
-  deviceSync.close();
+  // Before the feed closes: a camera still moving gets its STOP.
+  await deviceSync.close();
   await session.close();
   // A certificate pinned just before the stop must reach the disk.
   await trustStore.settled();

@@ -7,18 +7,34 @@
 //     the feed, then waits for Frigate's `<camera>/<setting>/state`; no
 //     confirmation within 4 s fails the command with a reason (in WebSocket
 //     mode Frigate 0.17+ silently ignores commands from non-admin accounts).
+//   - PTZ commands (`move`, `preset`) publish `<camera>/ptz`; Frigate sends
+//     no state back for them, so nothing is awaited. Frigate's moves are
+//     continuous until STOP: every move arms a per-camera watchdog that
+//     sends STOP after 1.5 s unless another order comes first (core spec
+//     A.2: a lost release must never leave a camera turning).
 //   - Polls (every minute per camera device): push a fresh image; on Frigate
 //     0.16, which has no `status/<role>` topics, read the camera fps from
 //     /api/stats for the transport badge.
 // -----------------------------------------------------------------------------
 
 import { createStateMapper } from './cameraStates.js';
-import { TOGGLES, cameraNameOfDevice, parseFeatureId } from './discovery.js';
+import { PTZ_STOP, ptzPayloadForMove, ptzPayloadForPreset, ptzTopic } from '../frigate/ptz.js';
+import {
+  FEATURES,
+  TOGGLES,
+  cameraNameOfDevice,
+  parseFeatureId,
+  presetsOfDevice,
+} from './discovery.js';
 import { createStatePublisher } from './statePublisher.js';
 import { createTransportTracker } from './transports.js';
 
 const CONFIRM_TIMEOUT_MS = 4_000;
 const STATS_MAX_AGE_MS = 30_000;
+// Short on purpose: a lone move (a scene, a release lost by the browser)
+// is a nudge, not a camera turning for seconds. Holding a pad button longer
+// than this stops the move: press again to go on.
+export const PTZ_WATCHDOG_MS = 1_500;
 
 export class CommandError extends Error {
   constructor(message) {
@@ -37,6 +53,7 @@ export class CommandError extends Error {
  * @param {{ pushImage: (device: object) => Promise }} options.images
  * @param {{ info: Function, warn: Function }} options.logger
  * @param {number} [options.confirmTimeoutMs]
+ * @param {number} [options.ptzWatchdogMs] automatic STOP after a move
  * @param {number} [options.debounceMs] camera status debounce
  * @param {number} [options.flushMs] state batching
  * @param {() => number} [options.now]
@@ -50,6 +67,7 @@ export function createDeviceSync({
   images,
   logger,
   confirmTimeoutMs = CONFIRM_TIMEOUT_MS,
+  ptzWatchdogMs = PTZ_WATCHDOG_MS,
   debounceMs,
   flushMs,
   now = Date.now,
@@ -84,6 +102,97 @@ export function createDeviceSync({
   const waiters = new Set(); // { camera, setting, on, resolve }
   const cameraEnabled = new Map(); // camera -> last `enabled` state
   let stats = { at: 0, promise: null };
+  const watchdogs = new Map(); // camera -> timer of the automatic STOP
+
+  /** The feed, when commands can reach Frigate through it. */
+  function connectedFeed() {
+    const feed = getFeed();
+    if (feed?.status.state !== 'connected') {
+      throw new CommandError(
+        'The real-time feed is not connected: the command cannot reach Frigate',
+      );
+    }
+    return feed;
+  }
+
+  async function sendPtz(feed, camera, payload) {
+    try {
+      await feed.publish(ptzTopic(camera), payload);
+    } catch (err) {
+      throw new CommandError(`The command could not be sent: ${err.message}`);
+    }
+  }
+
+  /** STOP sent outside a command (watchdog, shutdown): failures are logged. */
+  function stopNow(camera) {
+    const feed = getFeed();
+    if (feed?.status.state !== 'connected') {
+      logger.warn(`Could not stop the movement of ${camera}: the real-time feed is not connected`);
+      return Promise.resolve();
+    }
+    return Promise.resolve()
+      .then(() => feed.publish(ptzTopic(camera), PTZ_STOP))
+      .catch((err) => logger.warn(`Could not stop the movement of ${camera}: ${err.message}`));
+  }
+
+  /** Clears the watchdog of a camera; true when a move was pending. */
+  function disarm(camera) {
+    const timer = watchdogs.get(camera);
+    clearTimeout(timer);
+    watchdogs.delete(camera);
+    return timer !== undefined;
+  }
+
+  function arm(camera) {
+    disarm(camera);
+    const timer = setTimeout(() => {
+      watchdogs.delete(camera);
+      stopNow(camera);
+    }, ptzWatchdogMs);
+    timer.unref?.();
+    watchdogs.set(camera, timer);
+  }
+
+  async function move(camera, value) {
+    const payload = ptzPayloadForMove(value);
+    if (!payload) {
+      throw new CommandError(`${value} is not a camera movement`);
+    }
+    const feed = connectedFeed();
+    // Armed before sending: a move that reached Frigate while its publish
+    // reported an error still gets its STOP.
+    if (payload === PTZ_STOP) disarm(camera);
+    else arm(camera);
+    await sendPtz(feed, camera, payload);
+  }
+
+  /** The preset names of a device: its param, else the last Frigate read. */
+  function presetNames(device, camera) {
+    const stored =
+      presetsOfDevice(device) ??
+      presetsOfDevice((gladys.devices ?? []).find((d) => d.external_id === device?.external_id));
+    if (stored) {
+      return stored;
+    }
+    const known = getCapabilities()?.cameras.find((c) => c.name === camera);
+    return known?.ptz?.presets ?? [];
+  }
+
+  async function recallPreset(device, camera, value) {
+    const index = Number(value);
+    const name =
+      Number.isInteger(index) && index >= 1 ? presetNames(device, camera)[index - 1] : null;
+    if (!name) {
+      throw new CommandError(`Preset ${value} is unknown on ${camera}`);
+    }
+    const feed = connectedFeed();
+    // A pending watchdog STOP would cut the way to the preset short: stop
+    // the move now instead, then go.
+    if (disarm(camera)) {
+      await sendPtz(feed, camera, PTZ_STOP);
+    }
+    await sendPtz(feed, camera, ptzPayloadForPreset(name));
+  }
 
   function confirm(message) {
     for (const waiter of waiters) {
@@ -206,19 +315,20 @@ export function createDeviceSync({
       await checkHealth();
     },
 
-    /** onSetValue: a Frigate toggle. */
+    /** onSetValue: a Frigate toggle, a PTZ move or a preset. */
     async setValue(device, feature, value) {
       const parsed = parseFeatureId(gladys, feature?.external_id);
+      if (parsed?.key === FEATURES.MOVE) {
+        return move(parsed.camera, value);
+      }
+      if (parsed?.key === FEATURES.PRESET) {
+        return recallPreset(device, parsed.camera, value);
+      }
       const setting = parsed && TOGGLES[parsed.key];
       if (!setting) {
         throw new CommandError(`${feature?.external_id} cannot be changed`);
       }
-      const feed = getFeed();
-      if (feed?.status.state !== 'connected') {
-        throw new CommandError(
-          'The real-time feed is not connected: the command cannot reach Frigate',
-        );
-      }
+      const feed = connectedFeed();
       const on = Number(value) === 1;
       const confirmed = waitForState(parsed.camera, setting, on);
       try {
@@ -230,9 +340,16 @@ export function createDeviceSync({
       await confirmed;
     },
 
+    /**
+     * Stops the timers; a camera still moving gets its STOP at once (the
+     * watchdog would not outlive the process). Resolves once sent.
+     */
     close() {
       states.close();
       transports.close();
+      const moving = [...watchdogs.keys()];
+      moving.forEach(disarm);
+      return Promise.all(moving.map(stopNow));
     },
 
     // Exposed for the tests.

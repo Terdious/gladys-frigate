@@ -2,7 +2,8 @@
 // Lifecycle of the connection to Frigate, as Gladys sees it.
 //
 //   - apply(config): validate the configuration, (re)create the HTTP client,
-//     read the version and the cameras, publish the connection status
+//     read the version and the cameras (and the PTZ capabilities of the
+//     ONVIF ones), publish the connection status
 //     (connected, or why not, plus the security warnings). A network failure
 //     is retried every minute; a refused certificate, refused credentials or
 //     an unsupported version wait for the user instead (looping would only
@@ -30,7 +31,7 @@
 // -----------------------------------------------------------------------------
 
 import { configWarnings, usesMqtt } from '../config.js';
-import { readCapabilities } from '../frigate/capabilities.js';
+import { readCapabilities, readPtzCapabilities } from '../frigate/capabilities.js';
 import { HttpStatusError, UnreachableError } from '../frigate/errors.js';
 import { createEventEngine } from '../frigate/eventEngine.js';
 import { createFrigateClient } from '../frigate/httpClient.js';
@@ -159,6 +160,7 @@ export function createFrigateSession({
   let flapping = false;
   let flapTimer = null;
   let activityError = null; // last camera_activity failure logged
+  let lastPtz = new Map(); // camera -> last PTZ capabilities read (same Frigate URL)
 
   /** Publishes the status, unless it is the one already shown. */
   function setStatus(connected, message) {
@@ -349,7 +351,19 @@ export function createFrigateSession({
   async function readFrigate() {
     const version = await client.getVersion();
     const frigateConfig = await client.getConfig();
-    return readCapabilities(version, frigateConfig);
+    const result = readCapabilities(version, frigateConfig);
+    // A failed PTZ read is not a Frigate failure: the camera keeps its
+    // other features (and the pad found by an earlier read, if any).
+    await readPtzCapabilities(result, (camera) => client.getPtzInfo(camera), {
+      previous: lastPtz,
+      onError: (camera, err) =>
+        logger.debug?.(`Could not read the PTZ capabilities of ${camera}: ${err.message}`),
+    });
+    for (const camera of result.cameras) {
+      if (camera.ptz) lastPtz.set(camera.name, camera.ptz);
+      else lastPtz.delete(camera.name);
+    }
+    return result;
   }
 
   function connectedMessage() {
@@ -448,6 +462,10 @@ export function createFrigateSession({
       generation += 1;
       const currentGeneration = generation;
       clearTimeout(retryTimer);
+      if (config?.frigate_url !== newConfig.frigate_url) {
+        // Another Frigate: what the old one knew of its cameras is moot.
+        lastPtz = new Map();
+      }
       config = newConfig;
       raw = rawConfig;
       capabilities = null;

@@ -81,11 +81,14 @@ ACL (Mosquitto syntax):
 user gladys-frigate
 topic read frigate/#
 topic write frigate/+/+/set
+topic write frigate/+/ptz
 ```
+
+The last line is only needed for PTZ cameras (see below).
 
 Leave the broker host empty to use the Frigate WebSocket instead. Camera
 commands (the switches) then need an **admin** Frigate account: since Frigate
-0.17, the WebSocket refuses them from other roles.
+0.17, the WebSocket refuses them from other roles (PTZ commands excepted).
 
 The connection status shows the state of the feed ("Real-time feed: MQTT
 broker connected", or why not). A network failure is retried on its own; a
@@ -129,6 +132,7 @@ enables:
 | One sensor per tracked object (Person…) | Present / absent, and its count. Plus the total of objects.                                                                |
 | Review status                           | none, detection or alert.                                                                                                  |
 | Zone sensors                            | With the "Zone occupancy sensors" option: one presence sensor per zone and object.                                         |
+| Movement, Preset                        | Cameras with an ONVIF section in Frigate: pan, tilt, zoom and presets (see "PTZ cameras").                                 |
 
 A switch is only shown as changed once Frigate confirms it. Without an MQTT
 broker, the Frigate WebSocket only accepts commands from an **admin** account
@@ -149,6 +153,59 @@ its broker connection (the states may then be outdated).
 
 A camera added with an older version of the integration shows **Update** in
 the Discover tab: press it to add the new features.
+
+## PTZ cameras
+
+Frigate drives the pan, tilt, zoom and presets of a camera that has an
+`onvif` section in its configuration (the camera's ONVIF port and account,
+not the RTSP ones):
+
+```yaml
+cameras:
+  garden:
+    onvif:
+      host: 192.168.1.20
+      port: 2020 # Tapo; Reolink 8000; many others 80
+      user: admin
+      password: your-camera-password
+```
+
+The integration asks Frigate what such a camera supports
+(`/api/<camera>/ptz/info`) and its device gets two more features:
+
+| Feature  | What it does                                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Movement | Pan left / right, tilt up / down, zoom in / out: only the movements the camera can make continuously (Frigate's `pt`, `zoom`). |
+| Preset   | Moves the camera to one of its ONVIF presets, listed by name in the order Frigate gives them.                                  |
+
+Use them from the **Devices in room** widget of the dashboard (a row of
+arrows, zoom and stop buttons, and a preset list), from the pad of the
+**Camera** widget on its live view, and from scenes: "Set a device value"
+with the preset number (1 for the first preset of the list) points the
+camera at the door when you leave.
+
+**Safety stop.** Frigate moves a camera until it is told to stop. Every
+movement is stopped automatically after **1.5 seconds** unless another order
+comes first, so a release lost by the browser, or a scene sending a lone
+movement, never leaves the camera turning against its end stop. Holding a
+button longer stops the camera after 1.5 s: press again to go further. A
+preset recalled while the camera moves stops the movement first.
+
+Commands go through the real-time feed, and Frigate sends nothing back for
+them: a command is answered once sent. With an MQTT broker, its ACL must let
+the integration write `frigate/+/ptz` (see above). Without a broker, the
+Frigate WebSocket accepts PTZ commands from **any** Frigate role (unlike the
+switches, which need an admin account from Frigate 0.17).
+
+Presets are created and renamed in the camera's app (or in Frigate). Press
+**Refresh the cameras** afterwards: the preset list of the camera devices
+already added is updated by itself (the dashboard shows it on its next
+load). A camera added before this version shows **Update** in the Discover
+tab: press it to add the PTZ features. Frigate failing to answer for one
+camera (ONVIF not ready yet after a restart) only leaves that camera without
+its controls in the Discover tab until the next read; with a Gladys version
+that does not know the PTZ features yet, the cameras are listed without
+them (a warning in the logs says so).
 
 ## Scenes
 
@@ -259,6 +316,7 @@ The connection status at the top of the Configuration tab says what is wrong;
 | The Discover tab is empty                           | The status: Frigate must be reachable. Then **Scan**.                                                                                             |
 | No image on the dashboard                           | The camera is on in Frigate and in Gladys; wait one minute after adding it.                                                                       |
 | A switch fails ("did not confirm", "admin account") | Without a broker, Frigate 0.17+ only accepts commands from an admin account; with a broker, its ACL must allow `frigate/+/+/set`.                 |
+| A PTZ camera does not move                          | With a broker, its ACL must allow `frigate/+/ptz`; otherwise Frigate's logs (ONVIF). No PTZ feature: **Refresh the cameras**.                     |
 | "Real-time feed stopped"                            | The broker refused the account or the certificate: fix it, then **Test the connection**.                                                          |
 | Camera badge "unreachable"                          | Frigate is down or restarting, or the camera stream has been lost for 30 s (check the camera in Frigate).                                         |
 | A scene does not fire                               | The minimum confidence and the cooldown (Options); the object and zone names are Frigate's (`person`, not `Person`); the logs show each incident. |

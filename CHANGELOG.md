@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- PTZ cameras: a camera with an `onvif` section in Frigate gets a `move`
+  feature (pan, tilt, zoom: only the movements it supports, read from
+  Frigate's `/api/<camera>/ptz/info`) and a `preset` feature (its ONVIF
+  presets), for the dashboard PTZ controls and scenes. Commands go out on
+  `<camera>/ptz` (MQTT or the Frigate WebSocket, any Frigate role); every
+  movement is stopped automatically after 1.5 s without a new order. With
+  MQTT, the broker ACL needs `topic write frigate/+/ptz`.
+
 ### Changed
 
 - Fork of LM1LC3N7/gladys-frigate: the image is published as

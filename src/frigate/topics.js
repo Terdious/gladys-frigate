@@ -21,7 +21,8 @@
 //   <camera|zone>/<label>          number of objects ("all" = every label)
 //   <camera|zone>/<label>/active   number of moving objects
 // Cameras and zones share the count topics: the names known from the
-// Frigate configuration tell them apart. Anything else returns null.
+// Frigate configuration tell them apart. Anything else returns null, among
+// them `<camera>/ptz`, a command topic Frigate only listens to (./ptz.js).
 //
 // No Gladys dependency (layering rule).
 // -----------------------------------------------------------------------------

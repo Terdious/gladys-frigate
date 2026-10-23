@@ -158,7 +158,7 @@ export function createMqttFeed({
   feed.endpoint = `${host}:${port}`;
   Object.defineProperty(feed, 'status', { get: () => status });
 
-  /** Publish to `<prefix>/<topic>` (camera commands). */
+  /** Publish to `<prefix>/<topic>` (camera commands: `<cam>/<setting>/set`, `<cam>/ptz`). */
   feed.publish = (topic, payload) => client.publishAsync(`${prefix}/${topic}`, payload, { qos: 0 });
 
   feed.close = () =>

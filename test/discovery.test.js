@@ -1,16 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { GladysApiError } from '@gladysassistant/integration-sdk';
 import { readCapabilities } from '../src/frigate/capabilities.js';
 import {
   CAMERA_PARAM,
+  PTZ_PRESETS_PARAM,
   IMAGE_POLL_FREQUENCY_MS,
   buildDevices,
   cameraNameOfDevice,
   keyPart,
   parseFeatureId,
+  presetsOfDevice,
   publishDiscovery,
 } from '../src/gladys/discovery.js';
-import { FRIGATE_CONFIG } from './helpers/fakeFrigate.js';
+import { FRIGATE_CONFIG, FRIGATE_CONFIG_PTZ, FRONT_PTZ_INFO } from './helpers/fakeFrigate.js';
 
 // The id helpers of the SDK, with the selector Gladys gives the integration.
 const gladys = {
@@ -134,4 +137,105 @@ test('publishing replaces the list; no Frigate means an empty list (the scan end
   assert.equal(await publishDiscovery(sdk, null), 0);
   assert.equal(published[0].length, 2);
   assert.deepEqual(published[1], []);
+});
+
+/** Capabilities with the front camera on ONVIF, `ptz` as Frigate reported it. */
+function withPtz(ptz) {
+  const result = readCapabilities('0.17.2', FRIGATE_CONFIG_PTZ);
+  result.cameras[0].ptz = ptz;
+  return result;
+}
+
+const isPtz = (feature) => ['move', 'preset'].includes(feature.type);
+
+test('an ONVIF camera gets a move command with its movements and a preset command', () => {
+  const [front, garage] = buildDevices(gladys, withPtz(FRONT_PTZ_INFO));
+  const { supported_options: moves, ...move } = front.features.find(
+    (f) => f.external_id === 'ext:frigate:camera:front:move',
+  );
+  assert.deepEqual(move, {
+    name: 'Movement',
+    external_id: 'ext:frigate:camera:front:move',
+    category: 'camera',
+    type: 'move',
+    min: 0,
+    max: 6,
+    read_only: false,
+    has_feedback: false,
+    keep_history: false,
+  });
+  assert.deepEqual(moves, [
+    { value: 1, label: 'Pan left', sort_order: 0 },
+    { value: 2, label: 'Pan right', sort_order: 1 },
+    { value: 3, label: 'Tilt up', sort_order: 2 },
+    { value: 4, label: 'Tilt down', sort_order: 3 },
+    { value: 5, label: 'Zoom in', sort_order: 4 },
+    { value: 6, label: 'Zoom out', sort_order: 5 },
+  ]);
+  const preset = front.features.find((f) => f.external_id === 'ext:frigate:camera:front:preset');
+  assert.equal(preset.category, 'camera');
+  assert.equal(preset.type, 'preset');
+  assert.deepEqual(
+    [preset.min, preset.max, preset.read_only, preset.keep_history],
+    [0, 2, false, false],
+  );
+  assert.deepEqual(preset.supported_options, [
+    { value: 1, label: 'Entrance', sort_order: 0 },
+    { value: 2, label: 'Garden', sort_order: 1 },
+  ]);
+  // The preset order is kept on the device, to map a value back to its name.
+  assert.deepEqual(front.params, [
+    { name: CAMERA_PARAM, value: 'front' },
+    { name: PTZ_PRESETS_PARAM, value: '["Entrance","Garden"]' },
+  ]);
+  assert.deepEqual(presetsOfDevice(front), ['Entrance', 'Garden']);
+  // No ONVIF section: no PTZ feature, no PTZ param.
+  assert.ok(!garage.features.some(isPtz));
+  assert.equal(garage.params.length, 1);
+  assert.equal(presetsOfDevice(garage), null);
+});
+
+test('PTZ features follow what Frigate reports: zoom only, presets only, nothing', () => {
+  const zoomOnly = buildDevices(gladys, withPtz({ features: ['zoom'], presets: [] }))[0];
+  assert.deepEqual(
+    zoomOnly.features.find((f) => f.type === 'move').supported_options.map((o) => o.value),
+    [5, 6],
+  );
+  assert.ok(!zoomOnly.features.some((f) => f.type === 'preset'));
+  assert.equal(zoomOnly.params.length, 1);
+  const presetsOnly = buildDevices(gladys, withPtz({ features: ['pt-r'], presets: ['Door'] }))[0];
+  assert.deepEqual(
+    presetsOnly.features.filter((f) => f.category === 'camera').map((f) => f.type),
+    ['image', 'enabled', 'preset'],
+  );
+  // ONVIF in the file but /ptz/info unreadable: the camera stays a plain one.
+  const unread = buildDevices(gladys, withPtz(null))[0];
+  assert.ok(!unread.features.some(isPtz));
+  assert.equal(presetsOfDevice({ params: [{ name: PTZ_PRESETS_PARAM, value: '{' }] }), null);
+});
+
+test('a Gladys core without the PTZ types gets the cameras without their controls', async () => {
+  const published = [];
+  const warnings = [];
+  const sdk = {
+    ...gladys,
+    publishDiscoveredDevices: async (devices) => {
+      published.push(devices);
+      if (devices.some((device) => device.features.some(isPtz))) {
+        throw new GladysApiError(400, 'BAD_REQUEST', 'devices[0].features[11].type: unknown type');
+      }
+    },
+  };
+  const logger = { warn: (message) => warnings.push(message) };
+  assert.equal(await publishDiscovery(sdk, withPtz(FRONT_PTZ_INFO), { logger }), 2);
+  assert.equal(published.length, 2);
+  const [front] = published[1];
+  assert.ok(!front.features.some(isPtz));
+  assert.deepEqual(front.params, [{ name: CAMERA_PARAM, value: 'front' }]);
+  assert.match(warnings[0], /does not know the PTZ features/);
+  // Any other refusal is not retried.
+  sdk.publishDiscoveredDevices = async () => {
+    throw new GladysApiError(400, 'BAD_REQUEST', 'devices: max 1000 devices');
+  };
+  await assert.rejects(publishDiscovery(sdk, withPtz(FRONT_PTZ_INFO), { logger }), /max 1000/);
 });

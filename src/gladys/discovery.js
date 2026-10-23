@@ -12,15 +12,23 @@
 //     snapshots, audio detection (same rule);
 //   - motion; per tracked object a presence sensor and a counter, plus the
 //     total of objects; the review status (none / detection / alert);
-//   - with the "zone sensors" option, one presence sensor per zone and object.
+//   - with the "zone sensors" option, one presence sensor per zone and object;
+//   - for a camera Frigate drives over ONVIF: a `move` command (the movements
+//     it supports, as `supported_options`) and a `preset` command (its ONVIF
+//     presets), rendered as a pad by the dashboard Camera widget.
 // A camera device created with an older version shows "Update" in the
 // Discover tab when features are added (Gladys compares the structure).
 // -----------------------------------------------------------------------------
 
 import { DEVICE_FEATURE_CATEGORIES, DEVICE_FEATURE_TYPES } from '@gladysassistant/integration-sdk';
+import { CAMERA_MOVE, supportedMoves } from '../frigate/ptz.js';
 
 export const DEVICE_TYPE = 'camera';
 export const CAMERA_PARAM = 'FRIGATE_CAMERA';
+// The preset names in the order of the `preset` options (value = index + 1):
+// a command maps back to its name even before Frigate is read again after a
+// restart. Upserted silently with the options on every publication.
+export const PTZ_PRESETS_PARAM = 'FRIGATE_PTZ_PRESETS';
 // One of Gladys' DEVICE_POLL_FREQUENCIES (EVERY_MINUTES).
 export const IMAGE_POLL_FREQUENCY_MS = 60_000;
 export const MAX_OBJECT_COUNT = 1000;
@@ -31,6 +39,18 @@ export const FEATURES = Object.freeze({
   MOTION: 'motion',
   REVIEW: 'review',
   OBJECTS: 'objects',
+  MOVE: 'move',
+  PRESET: 'preset',
+});
+
+/** Labels of the `move` options (the dashboard pad shows icons, not these). */
+export const MOVE_LABELS = Object.freeze({
+  [CAMERA_MOVE.PAN_LEFT]: 'Pan left',
+  [CAMERA_MOVE.PAN_RIGHT]: 'Pan right',
+  [CAMERA_MOVE.TILT_UP]: 'Tilt up',
+  [CAMERA_MOVE.TILT_DOWN]: 'Tilt down',
+  [CAMERA_MOVE.ZOOM_IN]: 'Zoom in',
+  [CAMERA_MOVE.ZOOM_OUT]: 'Zoom out',
 });
 
 /**
@@ -94,6 +114,58 @@ const counter = (name, externalId) => ({
   // Counts change with every passer-by: history off by default.
   keep_history: false,
 });
+
+/**
+ * The PTZ features of a camera: none without ONVIF (or when Frigate could
+ * not tell what it supports), `move` when it has continuous moves, `preset`
+ * when it has presets. Neither keeps history nor echoes a state: they are
+ * commands, not positions.
+ * @param {(key: string) => string} id feature external id helper
+ * @param {object} camera from capabilities
+ */
+function ptzFeatures(id, camera) {
+  const features = [];
+  const moves = supportedMoves(camera.ptz?.features);
+  if (moves.length) {
+    features.push({
+      name: 'Movement',
+      external_id: id(FEATURES.MOVE),
+      category: DEVICE_FEATURE_CATEGORIES.CAMERA,
+      type: DEVICE_FEATURE_TYPES.CAMERA.MOVE,
+      min: CAMERA_MOVE.STOP,
+      max: CAMERA_MOVE.ZOOM_OUT,
+      read_only: false,
+      has_feedback: false,
+      keep_history: false,
+      // STOP (0) is always supported and never listed (core spec A.2).
+      supported_options: moves.map((value, index) => ({
+        value,
+        label: MOVE_LABELS[value],
+        sort_order: index,
+      })),
+    });
+  }
+  const presets = camera.ptz?.presets ?? [];
+  if (presets.length) {
+    features.push({
+      name: 'Preset',
+      external_id: id(FEATURES.PRESET),
+      category: DEVICE_FEATURE_CATEGORIES.CAMERA,
+      type: DEVICE_FEATURE_TYPES.CAMERA.PRESET,
+      min: 0,
+      max: presets.length,
+      read_only: false,
+      has_feedback: false,
+      keep_history: false,
+      supported_options: presets.map((name, index) => ({
+        value: index + 1,
+        label: name,
+        sort_order: index,
+      })),
+    });
+  }
+  return features;
+}
 
 /**
  * @param {{ externalIds: Function }} gladys SDK instance (id helpers only)
@@ -169,10 +241,15 @@ export function buildCameraDevice(gladys, camera, { zoneSensors = false } = {}) 
       }
     }
   }
+  features.push(...ptzFeatures(id, camera));
+  const params = [{ name: CAMERA_PARAM, value: camera.name }];
+  if (features.some((feature) => feature.type === DEVICE_FEATURE_TYPES.CAMERA.PRESET)) {
+    params.push({ name: PTZ_PRESETS_PARAM, value: JSON.stringify(camera.ptz.presets) });
+  }
   return {
     name: camera.friendlyName || camera.name,
     external_id: ids.device,
-    params: [{ name: CAMERA_PARAM, value: camera.name }],
+    params,
     should_poll: true,
     poll_frequency: IMAGE_POLL_FREQUENCY_MS,
     features,
@@ -202,6 +279,24 @@ export function cameraNameOfDevice(gladys, device) {
 }
 
 /**
+ * Preset names of a Gladys device, in the order of its `preset` options
+ * (from its params); null when it has none or they are unreadable.
+ * @returns {string[] | null}
+ */
+export function presetsOfDevice(device) {
+  const param = (device?.params ?? []).find((p) => p.name === PTZ_PRESETS_PARAM);
+  if (typeof param?.value !== 'string') {
+    return null;
+  }
+  try {
+    const names = JSON.parse(param.value);
+    return Array.isArray(names) && names.every((name) => typeof name === 'string') ? names : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Splits a feature external id into its camera and feature key.
  * @returns {{ camera: string, key: string } | null}
  */
@@ -218,16 +313,38 @@ export function parseFeatureId(gladys, externalId) {
   return { camera: rest.slice(0, index), key: rest.slice(index + 1) };
 }
 
+const PTZ_TYPES = new Set([DEVICE_FEATURE_TYPES.CAMERA.MOVE, DEVICE_FEATURE_TYPES.CAMERA.PRESET]);
+const hasPtz = (device) => device.features.some((feature) => PTZ_TYPES.has(feature.type));
+const withoutPtz = (device) => ({
+  ...device,
+  params: device.params.filter((param) => param.name !== PTZ_PRESETS_PARAM),
+  features: device.features.filter((feature) => !PTZ_TYPES.has(feature.type)),
+});
+// A Gladys core older than the PTZ feature types refuses the whole list.
+const isUnknownType = (err) => err?.status === 400 && /unknown type/i.test(err.message ?? '');
+
 /**
  * Publishes the discovery list (it replaces the previous one; Gladys keeps it
- * in memory only, so it is published again on every connection).
+ * in memory only, so it is published again on every connection). A core
+ * that does not know the PTZ feature types gets the list without them, so
+ * that the cameras stay discoverable.
  * @param {{ externalIds: Function, publishDiscoveredDevices: Function }} gladys
  * @param {object | null} capabilities null = Frigate not reachable: empty list
- * @param {{ zoneSensors?: boolean }} [options]
+ * @param {{ zoneSensors?: boolean, logger?: { warn: Function } }} [options]
  * @returns {Promise<number>} number of cameras listed
  */
-export async function publishDiscovery(gladys, capabilities, options) {
+export async function publishDiscovery(gladys, capabilities, options = {}) {
   const devices = buildDevices(gladys, capabilities, options);
-  await gladys.publishDiscoveredDevices(devices);
+  try {
+    await gladys.publishDiscoveredDevices(devices);
+  } catch (err) {
+    if (!isUnknownType(err) || !devices.some(hasPtz)) {
+      throw err;
+    }
+    options.logger?.warn(
+      'This Gladys version does not know the PTZ features: cameras are listed without their controls (update Gladys)',
+    );
+    await gladys.publishDiscoveredDevices(devices.map(withoutPtz));
+  }
   return devices.length;
 }

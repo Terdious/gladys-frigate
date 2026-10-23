@@ -307,6 +307,14 @@ export function createFrigateClient({
       return this.getJson('/api/stats');
     },
     /**
+     * GET /api/<camera>/ptz/info: `{ name, features, presets }` of a camera
+     * Frigate drives over ONVIF (see ./ptz.js).
+     * @param {string} camera Frigate camera name
+     */
+    getPtzInfo(camera) {
+      return this.getJson(`/api/${encodeURIComponent(camera)}/ptz/info`);
+    },
+    /**
      * Latest frame of a camera, resized and re-encoded by Frigate.
      * @param {string} camera Frigate camera name
      * @param {{ height?: number, quality?: number }} [options]
