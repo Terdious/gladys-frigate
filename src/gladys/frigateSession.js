@@ -753,7 +753,15 @@ export function createFrigateSession({
       try {
         // A running Frigate gets the saved settings (restarted only when its
         // config.yml or environment changed).
-        await managed.refresh(config, raw);
+        const refreshed = await managed.refresh(config, raw);
+        // Choosing the managed mode is the gesture that installs Frigate:
+        // the first save starts it, so the user has nothing else to press
+        // (and the image download, when the core defers it, begins now). A
+        // Frigate stopped on purpose later stays stopped: the Start button.
+        if (refreshed === null && !(await managed.everStarted())) {
+          logger.info('Managed mode saved: starting Frigate for the first time');
+          await managed.start(config, raw);
+        }
       } catch (err) {
         logger.warn(`Could not apply the configuration to Frigate: ${err.message}`);
         await setStatus(false, composeMessage([describeManagedError(err)]));

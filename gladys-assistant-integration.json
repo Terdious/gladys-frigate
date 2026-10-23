@@ -53,9 +53,25 @@
         "fr": "Déploiement"
       },
       "description": {
-        "en": "Connect an existing Frigate instance (remote, the usual choice on a Raspberry Pi or a NAS), or let Gladys install and run Frigate in its own container (managed, for a machine fit for video analysis). Save, then follow the section of the chosen mode.",
-        "fr": "Connectez une instance Frigate existante (distante, le choix habituel sur un Raspberry Pi ou un NAS), ou laissez Gladys installer et faire tourner Frigate dans son propre conteneur (géré, pour une machine adaptée à l'analyse vidéo). Enregistrez, puis suivez la section du mode choisi."
-      }
+        "en": "Connect an existing Frigate instance (remote, the usual choice on a Raspberry Pi or a NAS), or let Gladys install and run Frigate in its own container (managed, for a machine fit for video analysis). Save, then follow the section of the chosen mode. Every option of this form is explained in the documentation linked below.",
+        "fr": "Connectez une instance Frigate existante (distante, le choix habituel sur un Raspberry Pi ou un NAS), ou laissez Gladys installer et faire tourner Frigate dans son propre conteneur (géré, pour une machine adaptée à l'analyse vidéo). Enregistrez, puis suivez la section du mode choisi. Chaque option de ce formulaire est expliquée dans la documentation liée ci-dessous."
+      },
+      "links": [
+        {
+          "url": "https://github.com/Terdious/gladys-frigate/blob/main/docs/fr.md",
+          "label": {
+            "en": "Documentation (French)",
+            "fr": "Documentation (français)"
+          }
+        },
+        {
+          "url": "https://github.com/Terdious/gladys-frigate/blob/main/docs/en.md",
+          "label": {
+            "en": "Documentation (English)",
+            "fr": "Documentation (anglais)"
+          }
+        }
+      ]
     },
     {
       "key": "mode",
@@ -143,8 +159,8 @@
         "fr": "Frigate installé par Gladys (mode géré)"
       },
       "description": {
-        "en": "Managed mode only. Press \"Start Frigate\" below: Gladys generates the Frigate configuration and starts its container. Then add your cameras in the Frigate UI at https://{{gladys_host}}:{{port:frigate_ui}} (self-signed certificate; the login is given by \"Show the Frigate credentials\"). Grant the Coral or the GPU in the Hardware block of the integration. Recordings are kept the number of days below (0 = none); empty a field to keep the value set in the Frigate UI. The go2rtc restream listens on port {{port:frigate_rtsp}}.",
-        "fr": "Mode géré uniquement. Cliquez sur « Démarrer Frigate » ci-dessous : Gladys génère la configuration de Frigate et démarre son conteneur. Ajoutez ensuite vos caméras dans l'interface Frigate sur https://{{gladys_host}}:{{port:frigate_ui}} (certificat auto-signé ; l'identifiant est donné par « Afficher les identifiants Frigate »). Autorisez le Coral ou le GPU dans le bloc Matériel de l'intégration. Les enregistrements sont conservés le nombre de jours ci-dessous (0 = aucun) ; videz un champ pour garder la valeur réglée dans l'interface Frigate. Le restream go2rtc écoute sur le port {{port:frigate_rtsp}}."
+        "en": "Managed mode only. Saving this form with the managed mode chosen starts Frigate the first time: Gladys generates the Frigate configuration and starts its container (the buttons below drive it afterwards). Then add your cameras in the Frigate UI at https://{{gladys_host}}:{{port:frigate_ui}} (self-signed certificate; the login is given by \"Show the Frigate credentials\"). Grant the Coral or the GPU in the Hardware block of the integration. Recordings are kept the number of days below (0 = none); empty a field to keep the value set in the Frigate UI. The go2rtc restream listens on port {{port:frigate_rtsp}}.",
+        "fr": "Mode géré uniquement. Enregistrer ce formulaire avec le mode géré choisi démarre Frigate la première fois : Gladys génère la configuration de Frigate et démarre son conteneur (les boutons ci-dessous le pilotent ensuite). Ajoutez ensuite vos caméras dans l'interface Frigate sur https://{{gladys_host}}:{{port:frigate_ui}} (certificat auto-signé ; l'identifiant est donné par « Afficher les identifiants Frigate »). Autorisez le Coral ou le GPU dans le bloc Matériel de l'intégration. Les enregistrements sont conservés le nombre de jours ci-dessous (0 = aucun) ; videz un champ pour garder la valeur réglée dans l'interface Frigate. Le restream go2rtc écoute sur le port {{port:frigate_rtsp}}."
       },
       "links": [
         {
@@ -207,8 +223,8 @@
         "fr": "Fabricant du GPU"
       },
       "description": {
-        "en": "Gladys cannot read it from its container. Intel: OpenVINO detection and VAAPI video decoding; AMD: VAAPI decoding only; none: the GPU is not used.",
-        "fr": "Gladys ne peut pas le lire depuis son conteneur. Intel : détection OpenVINO et décodage vidéo VAAPI ; AMD : décodage VAAPI seulement ; aucun : le GPU n'est pas utilisé."
+        "en": "Gladys cannot read it from its container. Intel: OpenVINO detection and VAAPI video decoding; AMD: VAAPI decoding only; none: the GPU is not used. To find yours on the Gladys machine (Linux): `lspci | grep -i -E \"vga|display\"`, or Settings > About in the desktop; the documentation also covers Windows and macOS.",
+        "fr": "Gladys ne peut pas le lire depuis son conteneur. Intel : détection OpenVINO et décodage vidéo VAAPI ; AMD : décodage VAAPI seulement ; aucun : le GPU n'est pas utilisé. Pour connaître le vôtre sur la machine Gladys (Linux) : `lspci | grep -i -E \"vga|display\"`, ou Paramètres > À propos du bureau ; la documentation couvre aussi Windows et macOS."
       },
       "options": [
         {

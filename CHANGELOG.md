@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Links to the French and English documentation in the Deployment section
+  of the Configuration form (the fork is not in the store, which otherwise
+  hosts the documentation), and a "Which GPU do I have?" help (Linux command
+  line and desktop, Windows, macOS) for the GPU vendor option.
+
+### Changed
+
+- Managed mode: saving the configuration with the managed mode chosen starts
+  Frigate the first time (no second button to press); a Frigate stopped with
+  **Stop Frigate** stays stopped whatever is saved afterwards.
+
 ## [0.4.0] - 2026-10-23
 
 ### Added
