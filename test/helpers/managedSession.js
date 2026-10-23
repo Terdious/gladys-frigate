@@ -166,6 +166,7 @@ export async function setup(
   const configPath = join(dataDir, 'containers', 'frigate', 'config', 'config.yml');
   return {
     session,
+    managed,
     gladys,
     frigate,
     adminCalls,

@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Managed mode: **D-Link HTTP controls** for the D-Link DCS-5020L added
+  from Gladys (issue #9). Its device gets a Movement command with pan and
+  tilt only — one 5° step per press, no zoom, no preset — and a
+  **Night mode (IR)** switch (on: infrared forced, off: automatic), sent to
+  the camera itself (`pantiltcontrol.cgi`, `daynight.cgi`) with its admin
+  account, the control user and password of the Cameras button. A missing
+  or refused account is reported as such, credentials are never logged;
+  the answer of the Cameras button says which account the controls use.
+  Not available in remote mode (Gladys does not know the camera address).
+
 ## [0.5.0] - 2026-10-23
 
 ### Added

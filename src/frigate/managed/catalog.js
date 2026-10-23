@@ -198,8 +198,8 @@ export const CATALOG = Object.freeze([
     models: ['DCS-5020L'],
     label: { en: 'D-Link DCS-5020L (MJPEG)', fr: 'D-Link DCS-5020L (MJPEG)' },
     note: {
-      en: 'This firmware has no RTSP: Gladys uses the local MJPEG stream (light re-encoding to H264). For the stream, a user account of the camera is enough. For pan/tilt and night mode (coming in a later version), the camera ADMIN account is needed: enter it as the control user and password. No motorized zoom.',
-      fr: "Ce firmware n'a pas de RTSP : Gladys utilise le flux MJPEG local (léger réencodage en H264). Pour le flux, un compte utilisateur de la caméra suffit. Pour le pan/tilt et le mode nuit (dans une version ultérieure), le compte ADMIN de la caméra est nécessaire : saisissez-le comme utilisateur et mot de passe de contrôle. Pas de zoom motorisé.",
+      en: 'This firmware has no RTSP: Gladys uses the local MJPEG stream (light re-encoding to H264). For the stream, a user account of the camera is enough. For pan/tilt (5° steps) and the night mode (IR) switch, the camera ADMIN account is needed: enter it as the control user and password. No motorized zoom.',
+      fr: "Ce firmware n'a pas de RTSP : Gladys utilise le flux MJPEG local (léger réencodage en H264). Pour le flux, un compte utilisateur de la caméra suffit. Pour le pan/tilt (pas de 5°) et l'interrupteur de mode nuit (IR), le compte ADMIN de la caméra est nécessaire : saisissez-le comme utilisateur et mot de passe de contrôle. Pas de zoom motorisé.",
     },
     allowedSourceTypes: [SOURCE_TYPES.MJPEG, SOURCE_TYPES.CUSTOM],
     preset: {

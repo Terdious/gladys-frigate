@@ -9,7 +9,7 @@
 
 import { join } from 'node:path';
 import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
-import { normalizeConfig } from './src/config.js';
+import { isManaged, normalizeConfig } from './src/config.js';
 import { TrustStore } from './src/frigate/tlsTrust.js';
 import { createDeviceSync } from './src/gladys/deviceSync.js';
 import { createDiagnostics } from './src/gladys/diagnostics.js';
@@ -43,13 +43,28 @@ const managed = createManagedFrigate({
 // before the first start, or in remote mode, which needs no port from Gladys).
 const managedLiveHostPort = () => rtspHostPort(session.container);
 let publishedLivePort = null;
-// The live URL is resolved on every publication: Gladys upserts the params of
-// already-created devices, so a new host or port reaches them.
-const discover = (capabilities) =>
+// The D-Link HTTP controls (pan/tilt, night mode) of the cameras added from
+// Gladys: managed mode only, the commands need the camera address and admin
+// account of the managed store. An unreadable store lists no control.
+async function managedControls(capabilities) {
+  if (!capabilities || !isManaged(session.config)) return null;
+  try {
+    const controls = await managed.controls();
+    return (camera) => controls.get(camera) ?? null;
+  } catch (err) {
+    logger.warn(`Could not read the managed cameras for their controls: ${err.message}`);
+    return null;
+  }
+}
+// The live URL and the controls are resolved on every publication: Gladys
+// upserts the params of already-created devices, so a new host or port, or a
+// camera model changed, reaches them.
+const discover = async (capabilities) =>
   publishDiscovery(gladys, capabilities, {
     zoneSensors: zoneSensors(),
     logger,
     liveRtsp: resolveLiveRtsp(session.config, { managedHostPort: managedLiveHostPort() }),
+    controlsOf: await managedControls(capabilities),
   });
 
 const cameraImages = createCameraImages({
@@ -70,6 +85,8 @@ const deviceSync = createDeviceSync({
   getFeed: () => session.feed,
   zoneSensors,
   images: deviceImages,
+  // D-Link HTTP commands go to the camera itself (managed cameras only).
+  dlinkTargetOf: async (camera) => (isManaged(session.config) ? managed.dlinkTarget(camera) : null),
   logger,
 });
 const sceneEvents = createSceneEvents({

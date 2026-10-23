@@ -4,10 +4,12 @@ import { GladysApiError } from '@gladysassistant/integration-sdk';
 import { readCapabilities } from '../src/frigate/capabilities.js';
 import {
   CAMERA_PARAM,
+  CONTROL_PARAM,
   PTZ_PRESETS_PARAM,
   IMAGE_POLL_FREQUENCY_MS,
   buildDevices,
   cameraNameOfDevice,
+  controlOfDevice,
   keyPart,
   parseFeatureId,
   presetsOfDevice,
@@ -265,4 +267,66 @@ test('a Gladys core without the PTZ types gets the cameras without their control
     throw new GladysApiError(400, 'BAD_REQUEST', 'devices: max 1000 devices');
   };
   await assert.rejects(publishDiscovery(sdk, withPtz(FRONT_PTZ_INFO), { logger }), /max 1000/);
+});
+
+const DLINK = { ptz: true, nightMode: true };
+
+test('a managed D-Link HTTP camera gets pan/tilt steps and a night mode switch', () => {
+  const controlsOf = (name) => (name === 'front' ? DLINK : null);
+  // Even with ONVIF data from Frigate, the D-Link controls win: no zoom, no preset.
+  const [front, garage] = buildDevices(gladys, withPtz(FRONT_PTZ_INFO), {
+    controlsOf,
+    liveRtsp: { host: 'gladys.lan', port: 42116 },
+  });
+  const move = front.features.find((f) => f.external_id === 'ext:frigate:camera:front:move');
+  assert.deepEqual(
+    move.supported_options.map((o) => [o.value, o.label]),
+    [
+      [1, 'Pan left'],
+      [2, 'Pan right'],
+      [3, 'Tilt up'],
+      [4, 'Tilt down'],
+    ],
+  );
+  assert.deepEqual([move.min, move.max, move.read_only, move.keep_history], [0, 4, false, false]);
+  assert.ok(!front.features.some((f) => f.type === 'preset'));
+  const nightMode = front.features.find((f) => f.external_id.endsWith(':night-mode'));
+  assert.deepEqual(nightMode, {
+    name: 'Night mode (IR)',
+    external_id: 'ext:frigate:camera:front:night-mode',
+    category: 'switch',
+    type: 'binary',
+    min: 0,
+    max: 1,
+    read_only: false,
+    has_feedback: false,
+    keep_history: false,
+  });
+  // FRIGATE_CAMERA first, then the live URL, then the control protocol.
+  assert.deepEqual(
+    front.params.map((p) => p.name),
+    [CAMERA_PARAM, 'CAMERA_URL', CONTROL_PARAM],
+  );
+  assert.equal(controlOfDevice(front), 'dlink-http');
+  // Other cameras, and the remote mode (no controlsOf), are unchanged.
+  assert.ok(!garage.features.some((f) => f.external_id.endsWith(':night-mode')));
+  assert.equal(controlOfDevice(garage), null);
+  const remote = buildDevices(gladys, withPtz(FRONT_PTZ_INFO))[0];
+  assert.equal(remote.features.find((f) => f.type === 'move').supported_options.length, 6);
+  assert.ok(!remote.features.some((f) => f.external_id.endsWith(':night-mode')));
+  assert.equal(controlOfDevice(remote), null);
+});
+
+test('D-Link: pan/tilt without night mode, or night mode alone, without any ONVIF section', () => {
+  const [ptzOnly] = buildDevices(gladys, capabilities, {
+    controlsOf: () => ({ ptz: true, nightMode: false }),
+  });
+  assert.equal(ptzOnly.features.find((f) => f.type === 'move').supported_options.length, 4);
+  assert.ok(!ptzOnly.features.some((f) => f.external_id.endsWith(':night-mode')));
+  const [nightOnly] = buildDevices(gladys, capabilities, {
+    controlsOf: () => ({ ptz: false, nightMode: true }),
+  });
+  assert.ok(!nightOnly.features.some(isPtz));
+  assert.ok(nightOnly.features.some((f) => f.external_id.endsWith(':night-mode')));
+  assert.equal(controlOfDevice(nightOnly), 'dlink-http');
 });

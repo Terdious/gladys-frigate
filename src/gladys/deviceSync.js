@@ -12,17 +12,38 @@
 //     continuous until STOP: every move arms a per-camera watchdog that
 //     sends STOP after 1.5 s unless another order comes first (core spec
 //     A.2: a lost release must never leave a camera turning).
+//   - D-Link HTTP cameras (device param FRIGATE_CONTROL = dlink-http, managed
+//     mode): `move` and the "Night mode (IR)" switch go to the camera itself
+//     (src/frigate/dlink.js), with the address and the control (admin)
+//     account of the managed cameras store (`dlinkTargetOf`). A move is one
+//     5-degree step that ends by itself: STOP sends nothing and no watchdog
+//     is armed. The camera echoes nothing: the night mode state published
+//     is the one the command set.
 //   - Polls (every minute per camera device): push a fresh image; on Frigate
 //     0.16, which has no `status/<role>` topics, read the camera fps from
 //     /api/stats for the transport badge.
 // -----------------------------------------------------------------------------
 
 import { createStateMapper } from './cameraStates.js';
-import { PTZ_STOP, ptzPayloadForMove, ptzPayloadForPreset, ptzTopic } from '../frigate/ptz.js';
+import {
+  dlinkMoveRequest,
+  dlinkNightModeRequest,
+  sendDlink as sendDlinkRequest,
+} from '../frigate/dlink.js';
+import { DlinkCredentialsError, DlinkHttpError } from '../frigate/errors.js';
+import { CONTROL_PROTOCOLS } from '../frigate/managed/catalog.js';
+import {
+  CAMERA_MOVE,
+  PTZ_STOP,
+  ptzPayloadForMove,
+  ptzPayloadForPreset,
+  ptzTopic,
+} from '../frigate/ptz.js';
 import {
   FEATURES,
   TOGGLES,
   cameraNameOfDevice,
+  controlOfDevice,
   parseFeatureId,
   presetsOfDevice,
 } from './discovery.js';
@@ -54,6 +75,10 @@ export class CommandError extends Error {
  * @param {{ info: Function, warn: Function }} options.logger
  * @param {number} [options.confirmTimeoutMs]
  * @param {number} [options.ptzWatchdogMs] automatic STOP after a move
+ * @param {(camera: string) => Promise<{ host: string, port: number, username: string,
+ *   password: string } | null>} [options.dlinkTargetOf] where the D-Link controls of a
+ *   managed camera go (null: not a managed camera, or the remote mode)
+ * @param {typeof sendDlinkRequest} [options.sendDlink] the D-Link HTTP sender
  * @param {number} [options.debounceMs] camera status debounce
  * @param {number} [options.flushMs] state batching
  * @param {() => number} [options.now]
@@ -68,6 +93,8 @@ export function createDeviceSync({
   logger,
   confirmTimeoutMs = CONFIRM_TIMEOUT_MS,
   ptzWatchdogMs = PTZ_WATCHDOG_MS,
+  dlinkTargetOf = async () => null,
+  sendDlink = sendDlinkRequest,
   debounceMs,
   flushMs,
   now = Date.now,
@@ -194,6 +221,73 @@ export function createDeviceSync({
     await sendPtz(feed, camera, ptzPayloadForPreset(name));
   }
 
+  /** The control protocol of a device: its param, else the created device's. */
+  function controlOf(device) {
+    return (
+      controlOfDevice(device) ??
+      controlOfDevice((gladys.devices ?? []).find((d) => d.external_id === device?.external_id))
+    );
+  }
+
+  /** A D-Link failure as the reason shown to the user (never a credential). */
+  function dlinkCommandError(camera, err) {
+    if (err instanceof DlinkCredentialsError) {
+      return new CommandError(
+        `${camera}: control credentials (admin account) missing: edit the camera (Cameras button) and enter its admin account as control user and password`,
+      );
+    }
+    if (err instanceof DlinkHttpError) {
+      return new CommandError(
+        err.status === 401 || err.status === 403
+          ? `${camera} refused the control account: pan/tilt and night mode need the camera admin account (edit the camera)`
+          : `${camera} answered HTTP ${err.status} to the command`,
+      );
+    }
+    return new CommandError(`${camera} does not answer: ${err.message}`);
+  }
+
+  async function toDlink(camera, request) {
+    let target;
+    try {
+      target = await dlinkTargetOf(camera);
+    } catch (err) {
+      throw new CommandError(`The managed cameras cannot be read: ${err.message}`);
+    }
+    if (!target) {
+      throw new CommandError(
+        `The D-Link controls of ${camera} are only available in managed mode, for a D-Link camera added from Gladys`,
+      );
+    }
+    if (!target.host) {
+      throw new CommandError(`The address of ${camera} is missing: edit the camera`);
+    }
+    try {
+      await sendDlink(target, request);
+    } catch (err) {
+      throw dlinkCommandError(camera, err);
+    }
+  }
+
+  async function dlinkMove(camera, value) {
+    const payload = ptzPayloadForMove(value);
+    if (!payload) {
+      throw new CommandError(`${value} is not a camera movement`);
+    }
+    // A step ends by itself: the release of a pad button has nothing to stop.
+    if (payload === PTZ_STOP) return;
+    const number = Number(value);
+    if (number === CAMERA_MOVE.ZOOM_IN || number === CAMERA_MOVE.ZOOM_OUT) {
+      throw new CommandError('zoom is not available on this camera');
+    }
+    await toDlink(camera, dlinkMoveRequest(number));
+  }
+
+  async function dlinkNightMode(camera, featureId, value) {
+    const on = Number(value) === 1;
+    await toDlink(camera, dlinkNightModeRequest(on));
+    states.set([{ id: featureId, value: on ? 1 : 0 }]);
+  }
+
   function confirm(message) {
     for (const waiter of waiters) {
       if (
@@ -315,11 +409,17 @@ export function createDeviceSync({
       await checkHealth();
     },
 
-    /** onSetValue: a Frigate toggle, a PTZ move or a preset. */
+    /** onSetValue: a Frigate toggle, a PTZ move or a preset, a D-Link control. */
     async setValue(device, feature, value) {
       const parsed = parseFeatureId(gladys, feature?.external_id);
+      if (parsed?.key === FEATURES.NIGHT_MODE) {
+        // Only D-Link HTTP cameras have this switch.
+        return dlinkNightMode(parsed.camera, feature.external_id, value);
+      }
       if (parsed?.key === FEATURES.MOVE) {
-        return move(parsed.camera, value);
+        return controlOf(device) === CONTROL_PROTOCOLS.DLINK_HTTP
+          ? dlinkMove(parsed.camera, value)
+          : move(parsed.camera, value);
       }
       if (parsed?.key === FEATURES.PRESET) {
         return recallPreset(device, parsed.camera, value);
