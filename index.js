@@ -12,6 +12,7 @@ import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
 import { normalizeConfig } from './src/config.js';
 import { TrustStore } from './src/frigate/tlsTrust.js';
 import { createDeviceSync } from './src/gladys/deviceSync.js';
+import { createDiagnostics } from './src/gladys/diagnostics.js';
 import { cameraNameOfDevice, publishDiscovery } from './src/gladys/discovery.js';
 import { createFrigateSession } from './src/gladys/frigateSession.js';
 import { createCameraImages, createDeviceImages } from './src/gladys/images.js';
@@ -80,6 +81,8 @@ const sceneEvents = createSceneEvents({
     if (device) await deviceImages.pushImage(device);
   },
 });
+// Troubleshooting buttons; the debug buffer is fed by the feed's raw tap.
+const diagnostics = createDiagnostics({ getSession: () => session, managed, trustStore });
 const session = createFrigateSession({
   gladys,
   trustStore,
@@ -103,7 +106,11 @@ const session = createFrigateSession({
   onFrigateStatus: (up) => deviceSync.frigateUp(up),
   onFrigateFlapping: (flapping) => deviceSync.frigateFlapping(flapping),
   onFeedStatus: (status) => deviceSync.feedStatus(status),
-  onMessage: (message) => deviceSync.handleMessage(message),
+  onMessage: (message) => {
+    deviceSync.handleMessage(message);
+    diagnostics.noteMessage(message);
+  },
+  onRawMessage: (topic, payload) => diagnostics.recordRaw(topic, payload),
   onTransition: (transition) => {
     logger.info(describeTransition(transition));
     sceneEvents.handle(transition);
@@ -147,6 +154,8 @@ gladys.onAction(MANIFEST_ACTIONS.START_FRIGATE, () => session.startFrigate());
 gladys.onAction(MANIFEST_ACTIONS.STOP_FRIGATE, () => session.stopFrigate());
 gladys.onAction(MANIFEST_ACTIONS.RESTART_FRIGATE, () => session.restartFrigate());
 gladys.onAction(MANIFEST_ACTIONS.SHOW_CREDENTIALS, () => session.showCredentials());
+gladys.onAction(MANIFEST_ACTIONS.DIAGNOSTICS, (fields) => diagnostics.run(fields));
+gladys.onAction(MANIFEST_ACTIONS.PROPOSE_CAMERA, (fields) => diagnostics.proposeCamera(fields));
 gladys.onAction(MANIFEST_ACTIONS.CAMERA, (fields) => session.cameras(fields));
 // The user changed the hardware grants of the sub-container: new detector.
 gladys.onHardwareUpdated((containers) => session.hardwareUpdated(containers));

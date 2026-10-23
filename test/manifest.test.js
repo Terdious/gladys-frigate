@@ -8,7 +8,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DEFAULT_CONFIG, DETECTORS, GPU_VENDORS, MODES } from '../src/config.js';
+import { SOURCE_TYPES } from '../src/frigate/proposal.js';
+import { DIAGNOSTIC_REPORTS } from '../src/gladys/diagnostics.js';
 import {
+  CONTAINER_LIMITS,
   CONTAINER_NAME,
   FRIGATE_IMAGE,
   RETENTION_DEFAULTS,
@@ -99,8 +102,45 @@ test('manifest action keys are frozen', () => {
     'stop_frigate',
     'restart_frigate',
     'show_credentials',
+    'diagnostics',
+    'propose_camera',
     'camera',
   ]);
+});
+
+// The Gladys core rejects a manifest with more than 10 actions (MAX_ACTIONS
+// of server/lib/external-integration/constants.js).
+test('the manifest stays within the 10 actions the core accepts', () => {
+  assert.ok(manifest.actions.length <= 10, `${manifest.actions.length} actions`);
+});
+
+test('the diagnostics action offers the reports the code knows, overview first', () => {
+  const action = manifest.actions.find((a) => a.key === MANIFEST_ACTIONS.DIAGNOSTICS);
+  assert.equal(action.fields.length, 1);
+  const [report] = action.fields;
+  assert.equal(report.key, 'report');
+  assert.equal(report.type, 'select');
+  assert.equal(report.default, DIAGNOSTIC_REPORTS.OVERVIEW);
+  assert.deepEqual(
+    report.options.map((o) => o.value),
+    Object.values(DIAGNOSTIC_REPORTS),
+  );
+  for (const option of report.options) assert.ok(option.label.en && option.label.fr);
+});
+
+test('the catalog proposal offers the source types the code knows', () => {
+  const action = manifest.actions.find((a) => a.key === MANIFEST_ACTIONS.PROPOSE_CAMERA);
+  const field = (key) => action.fields.find((f) => f.key === key);
+  assert.equal(field('brand').required, true);
+  assert.equal(field('model').required, true);
+  assert.notEqual(field('notes').required, true);
+  assert.deepEqual(
+    field('source_type').options.map((o) => o.value),
+    [...SOURCE_TYPES],
+  );
+  for (const key of ['brand', 'model', 'source_type', 'notes']) {
+    assert.ok(field(key).label.en && field(key).label.fr, `${key} is labelled in both languages`);
+  }
 });
 
 test('manifest action keys match the code', () => {
@@ -197,6 +237,14 @@ test('the Frigate sub-container is declared as the code expects', () => {
     ],
   );
   assert.equal(container.env, undefined, 'never a secret in the public manifest');
+});
+
+test('the resource advice compares with the limits of the manifest', () => {
+  const container = frigateContainer();
+  assert.deepEqual(
+    { memoryMb: container.memory_mb, cpu: container.cpu, shmMb: container.shm_mb },
+    { ...CONTAINER_LIMITS },
+  );
 });
 
 test('every {{port:<name>}} of the section texts names a declared port', () => {

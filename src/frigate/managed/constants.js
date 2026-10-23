@@ -25,6 +25,14 @@ export const CONTAINER_NAME = 'frigate';
  */
 export const INTERNAL_URL = `http://${CONTAINER_NAME}:5000`;
 
+/**
+ * Resources of the sub-container: the manifest `memory_mb`, `cpu` and
+ * `shm_mb` of the `frigate` entry (pinned by a test). They are the maximums
+ * the Gladys core accepts today, whatever the machine (core issue #14):
+ * ./advice.js compares what the cameras need with them.
+ */
+export const CONTAINER_LIMITS = Object.freeze({ memoryMb: 4096, cpu: 2, shmMb: 512 });
+
 /** Manifest port names, referenced by `{{port:<name>}}` in the section texts. */
 export const UI_PORT_NAME = 'frigate_ui';
 export const RTSP_PORT_NAME = 'frigate_rtsp';

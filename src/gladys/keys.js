@@ -29,6 +29,11 @@ export const MANIFEST_ACTIONS = Object.freeze({
   // The Frigate UI address and its admin account: the result of an action
   // is only shown to the admin who pressed the button.
   SHOW_CREDENTIALS: 'show_credentials',
+  // Troubleshooting (both modes): a report to share or the last real-time
+  // messages (its `report` field), a pre-filled GitHub issue for the camera
+  // catalog.
+  DIAGNOSTICS: 'diagnostics',
+  PROPOSE_CAMERA: 'propose_camera',
   // Camera management from Gladys (managed mode): one button whose
   // `operation` field picks add / edit / remove / list — Gladys accepts ten
   // manifest actions at most.

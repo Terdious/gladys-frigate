@@ -70,6 +70,13 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   `config.yml` (go2rtc streams, restreamed inputs with record / detect
   roles, objects, detection fps, ONVIF endpoint); zones and masks drawn in
   the Frigate UI are kept, cameras added there are never touched.
+- **Diagnostics** (0.7.0, issues #10, #11): a **Diagnostics** button with
+  two reports — the overview (versions, feed, cameras, detectors, storage,
+  pinned certificates, the managed container and its resource advice — shm
+  and RAM per camera against the sandbox limits) and the last real-time
+  messages (ring buffer of 200, payloads cut at 2000 characters) — and
+  **Propose a camera to the catalog** (a pre-filled GitHub issue link the
+  user opens). No secret in any answer.
 
 Out of scope for now: faces and plates, classification, widgets, profiles,
 multiple Frigate instances (see
@@ -95,6 +102,9 @@ src/frigate/      Frigate client — NO Gladys dependency (enforced by ESLint)
   topics.js         MQTT / WebSocket messages -> typed messages
   eventEngine.js    events + reviews -> deduplicated transitions (score, cooldown)
   errors.js         typed errors, never carrying a secret
+  debugBuffer.js    ring buffer of the last 200 feed messages (cut, binary, redacted)
+  diagnostics.js    en/fr formatters of the diagnostics report and the debug answer
+  proposal.js       pre-filled GitHub issue link of "Propose a camera to the catalog"
   managed/          managed mode, still without any Gladys dependency
     constants.js      Frigate image (one version), container and port names, presets
     detector.js       granted hardware (+ GPU vendor) -> detector, VAAPI, notes
@@ -104,6 +114,7 @@ src/frigate/      Frigate client — NO Gladys dependency (enforced by ESLint)
     catalog.js        camera model catalog (presets, bilingual notes), COCO labels
     cameraSources.js  managed camera -> go2rtc sources + Frigate camera section
     camerasStore.js   /data/managed/cameras.json (0600): cameras added from Gladys
+    advice.js         shm / RAM advice per camera against the container limits
 src/gladys/       thin adapter to the Gladys SDK
   frigateSession.js connection lifecycle, real-time feed, status, the buttons,
                     resync when Frigate is back, MQTT flapping report; managed mode:
@@ -119,6 +130,7 @@ src/gladys/       thin adapter to the Gladys SDK
   statePublisher.js dedupe, batches, rate limit of the states sent to Gladys
   transports.js     per-camera badge (unreachable / degraded), debounced
   sceneEvents.js    transitions -> scene triggers; attach_event_snapshot action
+  diagnostics.js    the diagnostics (overview, last messages) and catalog buttons (read-only)
   messages.js       user-facing texts (en/fr) for errors, certificates, accounts
   keys.js           frozen manifest keys (scene triggers / actions)
   status.js         connection status message (errors and security warnings)

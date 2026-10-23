@@ -32,6 +32,7 @@ import { join } from 'node:path';
 import { explicitRetention, usesMqtt } from '../config.js';
 import { AdminBootstrapError, CamerasStoreError, ManagedConfigError } from '../frigate/errors.js';
 import { generatePassword, setAdminPassword } from '../frigate/managed/adminAccount.js';
+import { countConfigCameras } from '../frigate/managed/advice.js';
 import { buildCameraConfig, resolveCamera } from '../frigate/managed/cameraSources.js';
 import { createCamerasStore } from '../frigate/managed/camerasStore.js';
 import { namesInFile, renderConfig, writeConfigFile } from '../frigate/managed/configFile.js';
@@ -373,6 +374,14 @@ export function createManagedFrigate({
       return lastWrite;
     },
 
+    /**
+     * True once the admin password was set: the diagnostics report tells
+     * that much, the password itself only "Show the Frigate credentials".
+     */
+    async adminPasswordSet() {
+      return Boolean((await stateFile.read()).admin_password);
+    },
+
     /** True once the integration started Frigate at least once. */
     async everStarted() {
       return Boolean((await stateFile.read()).started_at);
@@ -484,7 +493,8 @@ export function createManagedFrigate({
 
     /**
      * What "Test the connection" shows without writing anything: the
-     * detector the hardware gives and the retention config.yml would get.
+     * detector the hardware gives, the retention config.yml would get and
+     * the number of cameras the file declares.
      */
     async inspect(config, raw, entry) {
       const settings = settingsFor(config, raw, entry?.devices ?? []);
@@ -494,11 +504,21 @@ export function createManagedFrigate({
       } catch {
         // No file yet: the defaults.
       }
+      // The cameras of the file plus the managed ones it may not hold yet
+      // (a store written, config.yml not regenerated), each counted once.
+      let cameras = countConfigCameras(content);
+      try {
+        const inFile = new Set(namesInFile(content)?.cameras ?? []);
+        const pending = Object.keys(await camerasStore.cameras()).filter((n) => !inFile.has(n));
+        cameras += pending.length;
+      } catch {
+        // An unreadable store: the file count alone.
+      }
       try {
         const { retention, customDetectors } = renderConfig(content, settings);
-        return { decision, retention, customDetectors };
+        return { decision, retention, customDetectors, cameras };
       } catch {
-        return { decision, retention: null, customDetectors: false };
+        return { decision, retention: null, customDetectors: false, cameras };
       }
     },
 
