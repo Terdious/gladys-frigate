@@ -36,15 +36,30 @@ Tracking: [issue #1](https://github.com/Terdious/gladys-frigate/issues/1)
 
 ## Milestones
 
-| Version    | Milestone                                                                                    | Issues                                                                               |
-| ---------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 0.4.0      | Managed mode: Frigate sub-container, config generation, hardware, retention                  | #2 bootstrap, #3 sub-container + config, #4 detector, #5 retention                   |
-| 0.5.0      | Camera management from Gladys: catalog (Tapo, Reolink, D-Link), add/remove, advanced sources | #6                                                                                   |
-| 0.6.0      | Live view through the core HLS streaming (local and Gladys Plus), both modes                 | #7                                                                                   |
-| 0.7.0      | PTZ, presets, night mode                                                                     | #8 ONVIF via Frigate, #9 D-Link HTTP                                                 |
-| 0.8.0      | Diagnostics, MQTT debug, resource advice, catalog proposals                                  | #10, #11                                                                             |
-| Core track | PRs for GladysAssistant/Gladys                                                               | #12 pids/tmpfs/4 ports, #13 on-demand pull, #14 host resources, #15 image per object |
-| Later      | Unscheduled leads                                                                            | #16 standalone go2rtc, #17 Tapo battery cameras                                      |
+| Version    | Milestone                                                                                                         | Issues                                                                                                      | Status              |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------- |
+| 0.4.0      | Managed mode: Frigate sub-container, config generation, hardware, retention — plus live view and PTZ, ready early | #2, #3, #4, #5, #7, #8                                                                                      | released 2026-10-23 |
+| 0.5.0      | Camera management from Gladys: catalog (Tapo, Reolink, D-Link), add/edit/remove, advanced sources                 | #6                                                                                                          | in progress         |
+| 0.6.0      | Camera controls: D-Link HTTP pan/tilt and night mode                                                              | #9                                                                                                          | planned             |
+| 0.7.0      | Diagnostics, MQTT debug, resource advice, catalog proposals                                                       | #10, #11                                                                                                    | in progress         |
+| Core track | PRs for GladysAssistant/Gladys, staged on the forks                                                               | #12 (Terdious/Gladys#24, integration-store#1), #13 on-demand pull, #14 host resources, #15 image per object | #12 drafted         |
+| Later      | Unscheduled leads                                                                                                 | #16 standalone go2rtc, #17 Tapo battery cameras                                                             |                     |
+
+Live view and PTZ were planned for 0.6.0 and 0.7.0 and shipped in 0.4.0: they
+were ready before the camera management and a first release to test the
+managed mode on a real machine mattered more than the numbering.
+
+### Testing a release on a real Gladys
+
+The fork is not in the store index. In Gladys: Integrations → "Install from
+GitHub" → `https://github.com/Terdious/gladys-frigate` (Gladys reads the
+manifest of `main`, so the manifest `docker_image` must be the released tag,
+which the Release workflow guarantees). The `ghcr.io/terdious/gladys-frigate`
+package must be public (Package settings → Change visibility), otherwise the
+pull fails. Then: Deployment → managed, Start Frigate, Show the Frigate
+credentials. What the first test must tell: whether Frigate stays up under the
+core sandbox limits (pids 100, 64 MB /tmp); if the status reports "does not
+stay up", that is the evidence for the core PR #12.
 
 ## Known limits of the core sandbox (to confirm on a real machine)
 
