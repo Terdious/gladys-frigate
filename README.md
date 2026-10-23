@@ -62,7 +62,7 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   Frigate UI; it sets Frigate's admin password ("Show the Frigate
   credentials") and talks to Frigate on its internal port 5000. Cameras are
   added in the Frigate UI until camera management (0.5.0).
-- **Diagnostics** (0.8.0, issues #10, #11): a **Diagnostics report** button
+- **Diagnostics** (0.7.0, issues #10, #11): a **Diagnostics report** button
   (versions, feed, cameras, detectors, storage, pinned certificates, the
   managed container and its resource advice — shm and RAM per camera
   against the sandbox limits), **Show the last real-time messages** (ring
