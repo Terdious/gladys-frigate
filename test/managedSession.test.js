@@ -173,22 +173,43 @@ async function setup(t, { container, now, managedMaxPolls = 60, adminStatus = ()
   };
 }
 
-test('managed: the connection is derived, the status asks to start Frigate', async (t) => {
-  const { apply, last, clientFactory, gladys } = await setup(t);
+test('managed: the connection is derived, and the first save starts Frigate', async (t) => {
+  const { apply, last, clientFactory, gladys, logs } = await setup(t);
   await apply();
-  assert.deepEqual(last(), { connected: false, message: MANAGED_TEXT.NOT_STARTED });
   const { options } = clientFactory.created.at(-1);
   assert.equal(options.url, 'http://frigate:5000');
   assert.equal(options.username, '');
   assert.equal(options.password, '');
-  assert.ok(!gladys.calls.some(([verb]) => verb === 'start'), 'never started on its own');
+  // Choosing the managed mode installs Frigate: no second gesture needed.
+  assert.deepEqual(
+    gladys.calls.filter(([verb]) => verb === 'start'),
+    [['start', 'frigate', { env: {} }]],
+  );
+  assert.ok(logs.some((line) => /starting Frigate for the first time/.test(line)));
+  await waitFor(() => last()?.message?.en === MANAGED_TEXT.STARTING.en, { what: 'starting' });
   assert.doesNotMatch(last().message.en, /5000/, 'no "port 5000" warning in managed mode');
+  // Saving again (or Gladys reconnecting) does not start it twice.
+  await apply();
+  assert.equal(gladys.calls.filter(([verb]) => verb === 'start').length, 1);
 });
 
 test('managed: no URL nor account is required', async (t) => {
   const { apply, last } = await setup(t);
   await apply({ mode: 'managed', frigate_url: '', username: 'only-user' });
-  assert.deepEqual(last().message, MANAGED_TEXT.NOT_STARTED);
+  await waitFor(() => last()?.message?.en === MANAGED_TEXT.STARTING.en, { what: 'starting' });
+});
+
+test('managed: a Frigate stopped on purpose is not started again by a save', async (t) => {
+  const { session, apply, last, gladys, frigate } = await setup(t);
+  await apply();
+  frigate.up = true;
+  await waitFor(() => last()?.connected === true, { what: 'connected' });
+  await session.stopFrigate();
+  assert.deepEqual(last(), { connected: false, message: MANAGED_TEXT.STOPPED });
+  const starts = gladys.calls.filter(([verb]) => verb === 'start').length;
+  await apply({ ...MANAGED, record_alerts_days: 3 });
+  assert.equal(gladys.calls.filter(([verb]) => verb === 'start').length, starts);
+  assert.deepEqual(last().message, MANAGED_TEXT.STOPPED);
 });
 
 test('managed: a Gladys without the sub-container says so', async (t) => {

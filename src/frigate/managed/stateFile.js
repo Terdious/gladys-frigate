@@ -19,6 +19,10 @@ import { dirname } from 'node:path';
  */
 export function createStateFile({ filePath }) {
   let state = null;
+  // Updates are serialized: two concurrent read-modify-write cycles (the
+  // admin password being saved while a start records its environment) would
+  // otherwise lose one of the two keys.
+  let queue = Promise.resolve();
 
   async function load() {
     if (state) return state;
@@ -38,17 +42,22 @@ export function createStateFile({ filePath }) {
     async read() {
       return { ...(await load()) };
     },
-    /** Merge `partial` into the state and save it. */
-    async update(partial) {
-      const next = { ...(await load()), ...partial };
-      await mkdir(dirname(filePath), { recursive: true, mode: 0o700 });
-      const temporary = `${filePath}.tmp`;
-      await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
-      // writeFile only applies the mode to a new file.
-      await chmod(temporary, 0o600);
-      await rename(temporary, filePath);
-      state = next;
-      return { ...next };
+    /** Merge `partial` into the state and save it (one update at a time). */
+    update(partial) {
+      const run = async () => {
+        const next = { ...(await load()), ...partial };
+        await mkdir(dirname(filePath), { recursive: true, mode: 0o700 });
+        const temporary = `${filePath}.tmp`;
+        await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+        // writeFile only applies the mode to a new file.
+        await chmod(temporary, 0o600);
+        await rename(temporary, filePath);
+        state = next;
+        return { ...next };
+      };
+      const result = queue.then(run, run);
+      queue = result.catch(() => {});
+      return result;
     },
   };
 }

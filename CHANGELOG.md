@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Links to the French and English documentation in the Deployment section
+  of the Configuration form (the fork is not in the store, which otherwise
+  hosts the documentation), and a "Which GPU do I have?" help (Linux command
+  line and desktop, Windows, macOS) for the GPU vendor option.
 - **Diagnostics** button, report **Overview**: integration and Frigate versions, mode,
   real-time feed (broker or WebSocket, state, age of the last message,
   flapping), cameras (camera / detection / skipped fps, `status/<role>`),
@@ -30,6 +34,12 @@ All notable changes to this project are documented here. The format follows
   issue link (brand, model, stream type, notes, versions; addresses and
   passwords of the notes masked) that the user opens and submits; the
   integration sends nothing.
+
+### Changed
+
+- Managed mode: saving the configuration with the managed mode chosen starts
+  Frigate the first time (no second button to press); a Frigate stopped with
+  **Stop Frigate** stays stopped whatever is saved afterwards.
 
 ## [0.4.0] - 2026-10-23
 
