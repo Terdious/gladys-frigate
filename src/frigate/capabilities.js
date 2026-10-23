@@ -1,5 +1,6 @@
 // -----------------------------------------------------------------------------
-// What this Frigate instance offers, read from /api/version and /api/config.
+// What this Frigate instance offers, read from /api/version and /api/config
+// (plus /api/<camera>/ptz/info for the cameras Frigate drives over ONVIF).
 //
 // The integration never assumes a version's features: everything the Gladys
 // side exposes (devices, features, topics to follow) comes from the
@@ -10,6 +11,7 @@
 // -----------------------------------------------------------------------------
 
 import { UnsupportedVersionError } from './errors.js';
+import { normalizePtzInfo } from './ptz.js';
 
 /** Oldest Frigate release this integration supports. */
 export const MIN_VERSION = Object.freeze({ major: 0, minor: 16, patch: 0 });
@@ -69,8 +71,46 @@ function normalizeCamera(name, camera = {}) {
       alerts: camera.review?.alerts?.enabled !== false,
       detections: camera.review?.detections?.enabled !== false,
     },
-    ptz: Boolean(camera.onvif?.host),
+    // An `onvif` section is what makes Frigate drive the camera's PTZ; what
+    // it actually supports is only known from /api/<camera>/ptz/info
+    // (readPtzCapabilities below): null until then, or when unreadable.
+    onvif: Boolean(camera.onvif?.host),
+    ptz: null,
   };
+}
+
+/**
+ * Fills `ptz: { features, presets }` of the cameras with an ONVIF section,
+ * one /api/<camera>/ptz/info request each (in parallel); an instance without
+ * ONVIF camera makes no request. A failed read leaves that camera without
+ * PTZ (or keeps what the previous read found: an ONVIF camera briefly
+ * unreachable must not drop its pad from the Discover tab), and is reported
+ * through `onError` — the rest of the capabilities stay valid.
+ * @param {ReturnType<typeof readCapabilities>} capabilities mutated and returned
+ * @param {(camera: string) => Promise<object>} getPtzInfo
+ * @param {object} [options]
+ * @param {Map<string, { features: string[], presets: string[] }>} [options.previous]
+ *   last ptz read per camera
+ * @param {(camera: string, err: Error) => void} [options.onError]
+ */
+export async function readPtzCapabilities(
+  capabilities,
+  getPtzInfo,
+  { previous = new Map(), onError = () => {} } = {},
+) {
+  await Promise.all(
+    capabilities.cameras
+      .filter((camera) => camera.onvif)
+      .map(async (camera) => {
+        try {
+          camera.ptz = normalizePtzInfo(await getPtzInfo(camera.name));
+        } catch (err) {
+          camera.ptz = previous.get(camera.name) ?? null;
+          onError(camera.name, err);
+        }
+      }),
+  );
+  return capabilities;
 }
 
 /**

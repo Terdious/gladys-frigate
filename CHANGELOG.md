@@ -16,6 +16,13 @@ All notable changes to this project are documented here. The format follows
   the RTSP host and port when the restream is not on the Frigate host or on
   port 8554. In remote mode, port 8554 of Frigate must be reachable from the
   Gladys machine.
+- PTZ cameras: a camera with an `onvif` section in Frigate gets a `move`
+  feature (pan, tilt, zoom: only the movements it supports, read from
+  Frigate's `/api/<camera>/ptz/info`) and a `preset` feature (its ONVIF
+  presets), for the dashboard PTZ controls and scenes. Commands go out on
+  `<camera>/ptz` (MQTT or the Frigate WebSocket, any Frigate role); every
+  movement is stopped automatically after 1.5 s without a new order. With
+  MQTT, the broker ACL needs `topic write frigate/+/ptz`.
 
 ### Changed
 

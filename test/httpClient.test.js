@@ -15,7 +15,7 @@ import {
 } from '../src/frigate/errors.js';
 import { TRUST_REASONS, TrustStore, endpointKey } from '../src/frigate/tlsTrust.js';
 import { TEST_CA_PEM, TEST_SERVER_CERT_PEM } from './helpers/certificates.js';
-import { fakeJwt, startFakeFrigate } from './helpers/fakeFrigate.js';
+import { FRONT_PTZ_INFO, fakeJwt, startFakeFrigate } from './helpers/fakeFrigate.js';
 
 const SERVER_FINGERPRINT = new X509Certificate(TEST_SERVER_CERT_PEM).fingerprint256;
 const OTHER_FINGERPRINT = Array(32).fill('AA').join(':');
@@ -285,4 +285,14 @@ test('auth: concurrent requests hitting a 401 share one login', async (t) => {
     frigateClient.getLatestJpeg('garage'),
   ]);
   assert.equal(frigate.calls.filter((call) => call.url === '/api/login').length, 1);
+});
+
+test('getPtzInfo reads /api/<camera>/ptz/info, authenticated', async (t) => {
+  const frigate = await startFakeFrigate({ ptzInfo: { front: FRONT_PTZ_INFO, 'back yard': 500 } });
+  t.after(() => frigate.close());
+  const api = client(frigate, { retries: 0 });
+  t.after(() => api.close());
+  assert.deepEqual(await api.getPtzInfo('front'), FRONT_PTZ_INFO);
+  await assert.rejects(api.getPtzInfo('back yard'), HttpStatusError);
+  assert.ok(frigate.calls.some((call) => call.url === '/api/back%20yard/ptz/info'));
 });

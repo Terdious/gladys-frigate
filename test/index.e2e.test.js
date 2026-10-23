@@ -10,16 +10,19 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startFakeFrigate } from './helpers/fakeFrigate.js';
+import { FRIGATE_CONFIG_PTZ, FRONT_PTZ_INFO, startFakeFrigate } from './helpers/fakeFrigate.js';
 import { startFakeGladys } from './helpers/fakeGladys.js';
 import { startTestBroker } from './helpers/testBroker.js';
 import { waitFor } from './helpers/waitFor.js';
 
 const WAIT = { timeoutMs: 8000 };
 
-test('index.js: connection, discovery, images, states, commands, scenes, actions', async (t) => {
+test('index.js: connection, discovery, images, states, commands, PTZ, scenes, actions', async (t) => {
   const frigate = await startFakeFrigate({
     account: { user: 'gladys', password: 'S3cret-Frigate' },
+    // The front camera is driven over ONVIF: PTZ pad and presets.
+    config: FRIGATE_CONFIG_PTZ,
+    ptzInfo: { front: FRONT_PTZ_INFO },
   });
   t.after(() => frigate.close());
   // The broker plays Frigate for the commands: a `set` is confirmed by `state`.
@@ -117,6 +120,28 @@ test('index.js: connection, discovery, images, states, commands, scenes, actions
   assert.ok(
     broker.published.some((p) => p.topic === 'frigate/front/detect/set' && p.payload === 'OFF'),
   );
+
+  // 4b. PTZ: a move goes out on <prefix>/<camera>/ptz, the watchdog stops it.
+  const move = created.features.find((f) => f.external_id.endsWith(':move'));
+  assert.equal(move.supported_options.length, 6);
+  const ptz = () =>
+    broker.published.filter((p) => p.topic === 'frigate/front/ptz').map((p) => p.payload);
+  const moved = await gladys.command('device.set-value', {
+    device: created,
+    device_feature: move,
+    value: 1,
+  });
+  assert.equal(moved.success, true, moved.error);
+  await step('the PTZ move', () => ptz().includes('MOVE_LEFT'));
+  await step('the automatic STOP', () => ptz().at(-1) === 'STOP');
+  const preset = created.features.find((f) => f.external_id.endsWith(':preset'));
+  const recalled = await gladys.command('device.set-value', {
+    device: created,
+    device_feature: preset,
+    value: 2,
+  });
+  assert.equal(recalled.success, true, recalled.error);
+  await step('the preset recall', () => ptz().at(-1) === 'preset_Garden');
 
   // 5. A review alert: fresh image first, then the scene event.
   const images = gladys.posts('/camera/image').length;

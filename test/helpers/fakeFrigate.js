@@ -29,11 +29,34 @@ export const FRIGATE_CONFIG = {
   },
 };
 
+/** FRIGATE_CONFIG with the front camera driven over ONVIF (PTZ). */
+export const FRIGATE_CONFIG_PTZ = {
+  ...FRIGATE_CONFIG,
+  cameras: {
+    ...FRIGATE_CONFIG.cameras,
+    front: {
+      ...FRIGATE_CONFIG.cameras.front,
+      onvif: { host: '192.168.1.20', port: 2020, user: 'admin', password: 'onvif-secret' },
+    },
+  },
+};
+
+/** What Frigate answers on /api/front/ptz/info for a pan/tilt/zoom camera. */
+export const FRONT_PTZ_INFO = {
+  name: 'front',
+  features: ['pt', 'zoom', 'pt-r', 'zoom-r', 'zoom-a'],
+  presets: ['Entrance', 'Garden'],
+};
+
 /**
  * @param {object} [options]
  * @param {boolean} [options.secure] https with the test certificate
  * @param {{ user: string, password: string } | null} [options.account] null = no auth
  * @param {string} [options.version]
+ * @param {object} [options.config] served by /api/config
+ * @param {Record<string, object | number>} [options.ptzInfo] per camera, the
+ *   /api/<camera>/ptz/info answer, or an HTTP status to fail with (404 for
+ *   a camera missing here)
  * @param {(req, res) => boolean} [options.override] return true when handled
  * @param {(query: { camera: string, height: number, quality: number }) => number} [options.imageBytes]
  *   size of the JPEG served by /api/<camera>/latest.jpg
@@ -42,6 +65,8 @@ export async function startFakeFrigate({
   secure = false,
   account = { user: 'gladys', password: 'pw' },
   version = '0.17.2-abcdef',
+  config = FRIGATE_CONFIG,
+  ptzInfo = {},
   override,
   imageBytes = () => 20_000,
 } = {}) {
@@ -83,7 +108,19 @@ export async function startFakeFrigate({
     }
     if (req.url === '/api/config') {
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(FRIGATE_CONFIG));
+      res.end(JSON.stringify(config));
+      return;
+    }
+    const ptz = /^\/api\/([^/]+)\/ptz\/info$/.exec(req.url);
+    if (ptz) {
+      const info = ptzInfo[decodeURIComponent(ptz[1])] ?? 404;
+      if (typeof info === 'number') {
+        res.statusCode = info;
+        res.end();
+        return;
+      }
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(info));
       return;
     }
     if (req.url === '/api/profile') {
@@ -106,7 +143,7 @@ export async function startFakeFrigate({
     }
     const latest = /^\/api\/([^/]+)\/latest\.jpg(?:\?(.*))?$/.exec(req.url);
     const camera = latest && decodeURIComponent(latest[1]);
-    if (latest && FRIGATE_CONFIG.cameras[camera]) {
+    if (latest && config.cameras[camera]) {
       const query = new URLSearchParams(latest[2] ?? '');
       const size = imageBytes({
         camera,

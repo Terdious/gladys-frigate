@@ -86,12 +86,15 @@ compte sur le broker, avec cette ACL (syntaxe Mosquitto) :
 user gladys-frigate
 topic read frigate/#
 topic write frigate/+/+/set
+topic write frigate/+/ptz
 ```
+
+La dernière ligne ne sert qu'aux caméras PTZ (voir plus bas).
 
 Laissez l'hôte du broker vide pour utiliser le WebSocket de Frigate à la place.
 Les commandes des caméras (les interrupteurs) demandent alors un compte
 Frigate **admin** : depuis Frigate 0.17, le WebSocket les refuse aux autres
-rôles.
+rôles (sauf les commandes PTZ).
 
 Le statut de connexion indique l'état du flux (« Flux temps réel : broker
 MQTT connecté », ou pourquoi pas). Une panne réseau est réessayée toute
@@ -137,6 +140,7 @@ porte ce que sa configuration Frigate active :
 | Un capteur par objet suivi (Person…) | Présent / absent, et son nombre. Plus le total des objets.                                                                                   |
 | Statut de revue                      | none (aucune), detection ou alert.                                                                                                           |
 | Capteurs de zone                     | Avec l'option « Capteurs d'occupation par zone » : un capteur de présence par zone et par objet.                                             |
+| Mouvement, Position (Preset)         | Caméras avec une section ONVIF dans Frigate : orientation, zoom et presets (voir « Caméras PTZ »).                                           |
 
 Un interrupteur n'est affiché comme changé qu'une fois confirmé par Frigate.
 Sans broker MQTT, le WebSocket de Frigate n'accepte les commandes que d'un
@@ -159,6 +163,63 @@ périmés).
 Une caméra ajoutée avec une version précédente de l'intégration affiche
 **Mettre à jour** dans l'onglet Découverte : cliquez dessus pour ajouter les
 nouvelles fonctionnalités.
+
+## Caméras PTZ
+
+Frigate pilote l'orientation, le zoom et les positions enregistrées
+(presets) d'une caméra dont la configuration a une section `onvif` (le port
+et le compte ONVIF de la caméra, pas ceux du RTSP) :
+
+```yaml
+cameras:
+  garden:
+    onvif:
+      host: 192.168.1.20
+      port: 2020 # Tapo ; Reolink 8000 ; beaucoup d'autres 80
+      user: admin
+      password: mot-de-passe-de-la-camera
+```
+
+L'intégration demande à Frigate ce que cette caméra sait faire
+(`/api/<camera>/ptz/info`) et son appareil gagne deux fonctionnalités :
+
+| Fonctionnalité       | Rôle                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Mouvement (Movement) | Gauche / droite, haut / bas, zoom avant / arrière : seulement les mouvements que la caméra fait en continu (`pt`, `zoom` de Frigate). |
+| Position (Preset)    | Envoie la caméra sur l'un de ses presets ONVIF, listés par nom dans l'ordre donné par Frigate.                                        |
+
+Utilisez-les depuis le widget **Appareils de la pièce** du tableau de bord
+(une ligne de flèches, de boutons de zoom et d'arrêt, et une liste de
+presets), depuis le pad du widget **Caméra** sur sa vue en direct, et dans
+les scènes : « Contrôler un appareil » avec le numéro du preset (1 pour le
+premier de la liste) tourne la caméra vers la porte quand vous partez.
+
+**Arrêt de sécurité.** Frigate fait tourner une caméra jusqu'à ce qu'on lui
+dise d'arrêter. Chaque mouvement est arrêté automatiquement au bout de
+**1,5 seconde** si aucun autre ordre n'arrive avant : un relâchement perdu
+par le navigateur, ou une scène qui envoie un mouvement seul, ne laisse
+jamais la caméra tourner contre sa butée. Un bouton maintenu plus longtemps
+arrête la caméra au bout de 1,5 s : appuyez de nouveau pour aller plus loin.
+Un preset demandé pendant un mouvement arrête d'abord ce mouvement.
+
+Les commandes passent par le flux temps réel, et Frigate ne renvoie rien en
+retour : une commande est acquittée dès son envoi. Avec un broker MQTT, son
+ACL doit autoriser l'intégration à écrire `frigate/+/ptz` (voir plus haut).
+Sans broker, le WebSocket de Frigate accepte les commandes PTZ de
+**n'importe quel** rôle Frigate (contrairement aux interrupteurs, qui
+demandent un compte admin depuis Frigate 0.17).
+
+Les presets se créent et se renomment dans l'application de la caméra (ou
+dans Frigate). Cliquez ensuite sur **Rafraîchir les caméras** : la liste des
+presets des appareils déjà ajoutés se met à jour d'elle-même (le tableau de
+bord l'affiche à son prochain chargement). Une caméra ajoutée avant cette
+version affiche **Mettre à jour** dans l'onglet Découverte : cliquez dessus
+pour ajouter les fonctionnalités PTZ. Si Frigate ne répond pas pour une
+caméra (ONVIF pas encore prêt après un redémarrage), seule cette caméra
+reste sans ses commandes dans l'onglet Découverte jusqu'à la lecture
+suivante ; avec une version de Gladys qui ne connaît pas encore les
+fonctionnalités PTZ, les caméras sont listées sans elles (un avertissement
+dans les logs le signale).
 
 ## Scènes
 
@@ -314,6 +375,7 @@ passe ni de jeton.
 | L'onglet Découverte est vide                            | Le statut : Frigate doit être joignable. Puis **Scanner**.                                                                                                         |
 | Pas d'image sur le tableau de bord                      | La caméra est allumée dans Frigate et dans Gladys ; attendez une minute après l'avoir ajoutée.                                                                     |
 | Un interrupteur échoue (« did not confirm », « admin ») | Sans broker, Frigate 0.17+ n'accepte les commandes que d'un compte admin ; avec un broker, son ACL doit autoriser `frigate/+/+/set`.                               |
+| Une caméra PTZ ne bouge pas                             | Avec un broker, son ACL doit autoriser `frigate/+/ptz` ; sinon les logs de Frigate (ONVIF). Pas de commande PTZ : **Rafraîchir les caméras**.                      |
 | « Flux temps réel arrêté »                              | Le broker a refusé le compte ou le certificat : corrigez, puis **Tester la connexion**.                                                                            |
 | Badge de caméra « injoignable »                         | Frigate est arrêté ou redémarre, ou le flux de la caméra est perdu depuis 30 s (vérifiez la caméra dans Frigate).                                                  |
 | Une scène ne se déclenche pas                           | La confiance minimale et le cooldown (Options) ; les noms d'objet et de zone sont ceux de Frigate (`person`, pas `Personne`) ; les logs montrent chaque incident.  |

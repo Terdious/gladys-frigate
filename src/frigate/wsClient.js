@@ -127,7 +127,11 @@ export function createWsFeed({
   feed.endpoint = client.webSocketUrl;
   Object.defineProperty(feed, 'status', { get: () => status });
 
-  /** Send `{ topic, payload }` (camera commands: admin role from 0.17). */
+  /**
+   * Send `{ topic, payload }` (camera commands). From 0.17 Frigate drops the
+   * `<camera>/<setting>/set` of non-admin roles, but accepts `<camera>/ptz`
+   * from any role.
+   */
   feed.publish = async (topic, payload) => {
     if (!socket || socket.readyState !== WebSocketImpl.OPEN) {
       throw new UnreachableError('CLOSED');

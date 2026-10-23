@@ -583,3 +583,49 @@ test('pins that cannot be saved are reported in the status', async (t) => {
   assert.match(statuses.at(-1).message.en, /cannot be saved in \/data/);
   assert.match(statuses.at(-1).message.fr, /ne peuvent pas être enregistrés dans \/data/);
 });
+
+test('the PTZ of the ONVIF cameras is read with the configuration; a failure is tolerated', async (t) => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { TrustStore } = await import('../src/frigate/tlsTrust.js');
+  const { startFakeFrigate, FRIGATE_CONFIG_PTZ, FRONT_PTZ_INFO } =
+    await import('./helpers/fakeFrigate.js');
+  const dir = await mkdtemp(join(tmpdir(), 'gladys-frigate-ptz-'));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 5 }));
+  const trustStore = await new TrustStore({ filePath: join(dir, 'tls-trust.json') }).load();
+  const ptzInfo = { front: FRONT_PTZ_INFO };
+  const frigate = await startFakeFrigate({ config: FRIGATE_CONFIG_PTZ, ptzInfo });
+  t.after(() => frigate.close());
+  const debug = [];
+  const statuses = [];
+  const session = createFrigateSession({
+    gladys: {
+      setConnectionStatus: async (connected, message) => statuses.push({ connected, message }),
+    },
+    trustStore,
+    logger: { info() {}, warn() {}, debug: (message) => debug.push(message) },
+  });
+  t.after(() => session.close());
+  const raw = { frigate_url: frigate.url, username: 'gladys', password: 'pw' };
+  await session.apply(normalizeConfig(raw), raw);
+  const ptzCalls = () => frigate.calls.filter((call) => call.url.endsWith('/ptz/info'));
+  assert.deepEqual(
+    ptzCalls().map((call) => call.url),
+    ['/api/front/ptz/info'],
+    'only the ONVIF camera is asked',
+  );
+  assert.deepEqual(session.capabilities.cameras[0].ptz.presets, ['Entrance', 'Garden']);
+  assert.equal(session.capabilities.cameras[1].ptz, null);
+
+  // Frigate fails on it now: connected all the same, the last read is kept.
+  ptzInfo.front = 404;
+  await session.refreshCameras();
+  assert.equal(statuses.at(-1).connected, true);
+  assert.deepEqual(session.capabilities.cameras[0].ptz.presets, ['Entrance', 'Garden']);
+  assert.match(debug.at(-1), /Could not read the PTZ capabilities of front: .*404/);
+  // Another Frigate: nothing to keep from the previous one.
+  const other = { ...raw, frigate_url: frigate.url.replace('127.0.0.1', 'localhost') };
+  await session.apply(normalizeConfig(other), other);
+  assert.equal(session.capabilities.cameras[0].ptz, null);
+});

@@ -2,14 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readCapabilities } from '../src/frigate/capabilities.js';
+import { CAMERA_MOVE } from '../src/frigate/ptz.js';
 import { parseMessage } from '../src/frigate/topics.js';
-import { CommandError, createDeviceSync } from '../src/gladys/deviceSync.js';
+import { CommandError, PTZ_WATCHDOG_MS, createDeviceSync } from '../src/gladys/deviceSync.js';
 import { buildDevices } from '../src/gladys/discovery.js';
-import { FRIGATE_CONFIG } from './helpers/fakeFrigate.js';
+import { FRIGATE_CONFIG, FRIGATE_CONFIG_PTZ, FRONT_PTZ_INFO } from './helpers/fakeFrigate.js';
 import { gladysIds } from './helpers/gladysIds.js';
 
 const known = { cameras: new Set(['front', 'garage']), zones: new Set(['porch']) };
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 function fakeFeed(mode = 'mqtt') {
   const feed = new EventEmitter();
@@ -22,8 +24,13 @@ function fakeFeed(mode = 'mqtt') {
   return feed;
 }
 
-function setup({ version = '0.17.2', feed = fakeFeed(), stats, created = ['front'] } = {}) {
-  const capabilities = readCapabilities(version, FRIGATE_CONFIG);
+function setup({
+  version = '0.17.2',
+  feed = fakeFeed(),
+  stats,
+  created = ['front'],
+  capabilities = readCapabilities(version, FRIGATE_CONFIG),
+} = {}) {
   const states = [];
   const transports = [];
   const pushed = [];
@@ -36,6 +43,7 @@ function setup({ version = '0.17.2', feed = fakeFeed(), stats, created = ['front
     publishStates: async (batch) => states.push(...batch),
     publishTransports: async (batch) => transports.push(...batch),
   };
+  const logs = [];
   const sync = createDeviceSync({
     gladys,
     getCapabilities: () => capabilities,
@@ -48,13 +56,23 @@ function setup({ version = '0.17.2', feed = fakeFeed(), stats, created = ['front
     getFeed: () => feed,
     zoneSensors: () => false,
     images: { pushImage: async (device) => pushed.push(device.external_id) },
-    logger: { info() {}, warn() {} },
+    logger: { info() {}, warn: (text) => logs.push(text) },
     confirmTimeoutMs: 50,
     debounceMs: 20,
     flushMs: 5,
   });
   const message = (topic, payload) => sync.handleMessage(parseMessage(topic, payload, known));
-  return { sync, gladys, feed, states, transports, pushed, message, statsReads: () => statsReads };
+  return {
+    sync,
+    gladys,
+    feed,
+    states,
+    transports,
+    pushed,
+    message,
+    logs,
+    statsReads: () => statsReads,
+  };
 }
 
 const feature = (camera, key) => ({ external_id: `ext:frigate:camera:${camera}:${key}` });
@@ -170,4 +188,147 @@ test('a camera turned off gets no image pushed on poll', async (t) => {
   message('front/enabled/state', 'ON');
   await sync.poll(gladys.devices[0]);
   assert.equal(pushed.length, 2);
+});
+
+/** The front camera on ONVIF, as Frigate reports it (pan, tilt, zoom, 2 presets). */
+function ptzCapabilities() {
+  const capabilities = readCapabilities('0.17.2', FRIGATE_CONFIG_PTZ);
+  capabilities.cameras[0].ptz = structuredClone(FRONT_PTZ_INFO);
+  return capabilities;
+}
+
+const PTZ_TOPIC = 'front/ptz';
+
+test('a move publishes <camera>/ptz at once, without waiting for any state', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { sync, feed } = setup({ capabilities: ptzCapabilities() });
+  t.after(() => sync.close());
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.PAN_LEFT);
+  await sync.setValue({}, feature('front', 'move'), '5');
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.STOP);
+  assert.deepEqual(feed.published, [
+    [PTZ_TOPIC, 'MOVE_LEFT'],
+    [PTZ_TOPIC, 'ZOOM_IN'],
+    [PTZ_TOPIC, 'STOP'],
+  ]);
+  t.mock.timers.tick(PTZ_WATCHDOG_MS * 2);
+  assert.equal(feed.published.length, 3, 'no automatic STOP after an explicit one');
+});
+
+test('the watchdog stops a move left without STOP after 1.5 s, re-armed by each move', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { sync, feed } = setup({ capabilities: ptzCapabilities() });
+  t.after(() => sync.close());
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.TILT_UP);
+  t.mock.timers.tick(PTZ_WATCHDOG_MS - 100);
+  assert.deepEqual(feed.published, [[PTZ_TOPIC, 'MOVE_UP']]);
+  // A new direction re-arms the watchdog from now.
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.PAN_RIGHT);
+  t.mock.timers.tick(PTZ_WATCHDOG_MS - 100);
+  assert.equal(feed.published.length, 2);
+  t.mock.timers.tick(100);
+  await settle();
+  assert.deepEqual(feed.published, [
+    [PTZ_TOPIC, 'MOVE_UP'],
+    [PTZ_TOPIC, 'MOVE_RIGHT'],
+    [PTZ_TOPIC, 'STOP'],
+  ]);
+});
+
+test('a lost feed makes the watchdog STOP a logged failure, not a crash', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { sync, feed, logs } = setup({ capabilities: ptzCapabilities() });
+  t.after(() => sync.close());
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.PAN_LEFT);
+  feed.status = { state: 'disconnected', error: null };
+  t.mock.timers.tick(PTZ_WATCHDOG_MS);
+  await settle();
+  assert.match(logs.at(-1), /Could not stop the movement of front/);
+  feed.status = { state: 'connected', error: null };
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.PAN_LEFT);
+  feed.publish = async () => {
+    throw new Error('broker gone');
+  };
+  t.mock.timers.tick(PTZ_WATCHDOG_MS);
+  await settle();
+  assert.match(logs.at(-1), /Could not stop the movement of front: broker gone/);
+});
+
+test('a preset value maps back to its name: device param, else the Frigate read', async (t) => {
+  const capabilities = ptzCapabilities();
+  const { sync, feed, gladys } = setup({ capabilities });
+  t.after(() => sync.close());
+  const [device] = gladys.devices;
+  await sync.setValue(device, feature('front', 'preset'), 2);
+  assert.deepEqual(feed.published.at(-1), [PTZ_TOPIC, 'preset_Garden']);
+  // Only the external id (Gladys sends a slim device): the created device.
+  await sync.setValue({ external_id: device.external_id }, feature('front', 'preset'), '1');
+  assert.deepEqual(feed.published.at(-1), [PTZ_TOPIC, 'preset_Entrance']);
+  // Not created here at all: the last Frigate read.
+  gladys.devices = [];
+  await sync.setValue({}, feature('front', 'preset'), 1);
+  assert.deepEqual(feed.published.at(-1), [PTZ_TOPIC, 'preset_Entrance']);
+  // The param wins over a read whose order changed meanwhile.
+  capabilities.cameras[0].ptz.presets = ['Garden', 'Entrance'];
+  await sync.setValue(device, feature('front', 'preset'), 1);
+  assert.deepEqual(feed.published.at(-1), [PTZ_TOPIC, 'preset_Entrance']);
+});
+
+test('a preset recalled during a move stops it first; the watchdog is disarmed', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { sync, feed, gladys } = setup({ capabilities: ptzCapabilities() });
+  t.after(() => sync.close());
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.ZOOM_OUT);
+  await sync.setValue(gladys.devices[0], feature('front', 'preset'), 1);
+  t.mock.timers.tick(PTZ_WATCHDOG_MS * 2);
+  await settle();
+  assert.deepEqual(feed.published, [
+    [PTZ_TOPIC, 'ZOOM_OUT'],
+    [PTZ_TOPIC, 'STOP'],
+    [PTZ_TOPIC, 'preset_Entrance'],
+  ]);
+});
+
+test('PTZ commands fail clearly: unknown value, unknown preset, no feed, send error', async (t) => {
+  const { sync, feed, gladys } = setup({ capabilities: ptzCapabilities() });
+  t.after(() => sync.close());
+  const [device] = gladys.devices;
+  await assert.rejects(sync.setValue(device, feature('front', 'move'), 9), /not a camera movement/);
+  await assert.rejects(
+    sync.setValue(device, feature('front', 'preset'), 3),
+    /Preset 3 is unknown on front/,
+  );
+  await assert.rejects(sync.setValue(device, feature('front', 'preset'), 0), CommandError);
+  assert.deepEqual(feed.published, [], 'nothing reaches Frigate');
+  feed.status = { state: 'disconnected', error: null };
+  await assert.rejects(sync.setValue(device, feature('front', 'move'), 1), /not connected/);
+  feed.status = { state: 'connected', error: null };
+  feed.publish = async () => {
+    throw new Error('offline');
+  };
+  await assert.rejects(
+    sync.setValue(device, feature('front', 'preset'), 1),
+    /could not be sent: offline/,
+  );
+});
+
+test('the WebSocket feed carries the PTZ commands too (any Frigate role, 0.17+)', async (t) => {
+  const { sync, feed } = setup({ feed: fakeFeed('websocket'), capabilities: ptzCapabilities() });
+  t.after(() => sync.close());
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.TILT_DOWN);
+  assert.deepEqual(feed.published, [[PTZ_TOPIC, 'MOVE_DOWN']]);
+});
+
+test('closing stops a camera still moving at once and clears its watchdog', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { sync, feed } = setup({ capabilities: ptzCapabilities() });
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.PAN_LEFT);
+  await sync.close();
+  assert.deepEqual(feed.published, [
+    [PTZ_TOPIC, 'MOVE_LEFT'],
+    [PTZ_TOPIC, 'STOP'],
+  ]);
+  t.mock.timers.tick(PTZ_WATCHDOG_MS * 2);
+  await settle();
+  assert.equal(feed.published.length, 2);
 });

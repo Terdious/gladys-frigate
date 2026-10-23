@@ -37,6 +37,7 @@ const managedLiveHostPort = () => null;
 const discover = (capabilities) =>
   publishDiscovery(gladys, capabilities, {
     zoneSensors: zoneSensors(),
+    logger,
     liveRtsp: resolveLiveRtsp(session.config, { managedHostPort: managedLiveHostPort() }),
   });
 
@@ -113,7 +114,8 @@ gladys.onAction(MANIFEST_ACTIONS.RESET_CERTIFICATE, () => session.resetCertifica
 
 gladys.handleShutdown(async (signal) => {
   logger.info(`Received ${signal} -> graceful shutdown`);
-  deviceSync.close();
+  // Before the feed closes: a camera still moving gets its STOP.
+  await deviceSync.close();
   await session.close();
   // A certificate pinned just before the stop must reach the disk.
   await trustStore.settled();
