@@ -10,6 +10,7 @@ import {
   parseFeatureId,
   publishDiscovery,
 } from '../src/gladys/discovery.js';
+import { LIVE_PARAM } from '../src/gladys/live.js';
 import { FRIGATE_CONFIG } from './helpers/fakeFrigate.js';
 
 // The id helpers of the SDK, with the selector Gladys gives the integration.
@@ -108,6 +109,30 @@ test('feature ids split back into camera and key', () => {
   assert.equal(keyPart('Traffic Light'), 'traffic_light');
 });
 
+test('the live RTSP URL is published as the CAMERA_URL param of each camera', () => {
+  const liveRtsp = { host: '192.168.1.10', port: 8554 };
+  const [front, garage] = buildDevices(gladys, capabilities, { liveRtsp });
+  assert.equal(LIVE_PARAM, 'CAMERA_URL', 'the param the core rtsp-camera service streams from');
+  assert.deepEqual(front.params, [
+    { name: CAMERA_PARAM, value: 'front' },
+    { name: LIVE_PARAM, value: 'rtsp://192.168.1.10:8554/front' },
+  ]);
+  assert.equal(garage.params[1].value, 'rtsp://192.168.1.10:8554/garage');
+  // The live param does not confuse the camera lookup of the device.
+  assert.equal(cameraNameOfDevice(gladys, front), 'front');
+  assert.equal(
+    cameraNameOfDevice(gladys, { ...front, params: [...front.params].reverse() }),
+    'front',
+  );
+});
+
+test('no live target (managed mode before its port is known): no CAMERA_URL param', () => {
+  for (const options of [undefined, {}, { liveRtsp: null }]) {
+    const [front] = buildDevices(gladys, capabilities, options);
+    assert.deepEqual(front.params, [{ name: CAMERA_PARAM, value: 'front' }]);
+  }
+});
+
 test('Gladys poll frequencies: 60 s is an allowed value', () => {
   // DEVICE_POLL_FREQUENCIES of the Gladys core; anything else is a 400.
   assert.ok([1000, 2000, 10_000, 15_000, 30_000, 60_000].includes(IMAGE_POLL_FREQUENCY_MS));
@@ -134,4 +159,6 @@ test('publishing replaces the list; no Frigate means an empty list (the scan end
   assert.equal(await publishDiscovery(sdk, null), 0);
   assert.equal(published[0].length, 2);
   assert.deepEqual(published[1], []);
+  await publishDiscovery(sdk, capabilities, { liveRtsp: { host: 'frigate.lan', port: 8554 } });
+  assert.equal(published[2][0].params[1].value, 'rtsp://frigate.lan:8554/front');
 });

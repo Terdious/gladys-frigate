@@ -12,12 +12,15 @@
 //     snapshots, audio detection (same rule);
 //   - motion; per tracked object a presence sensor and a counter, plus the
 //     total of objects; the review status (none / detection / alert);
-//   - with the "zone sensors" option, one presence sensor per zone and object.
+//   - with the "zone sensors" option, one presence sensor per zone and object;
+//   - when the live RTSP restream is known, the `CAMERA_URL` param the core
+//     `rtsp-camera` service streams from (live view, see src/gladys/live.js).
 // A camera device created with an older version shows "Update" in the
 // Discover tab when features are added (Gladys compares the structure).
 // -----------------------------------------------------------------------------
 
 import { DEVICE_FEATURE_CATEGORIES, DEVICE_FEATURE_TYPES } from '@gladysassistant/integration-sdk';
+import { LIVE_PARAM, liveRtspUrl } from './live.js';
 
 export const DEVICE_TYPE = 'camera';
 export const CAMERA_PARAM = 'FRIGATE_CAMERA';
@@ -96,11 +99,19 @@ const counter = (name, externalId) => ({
 });
 
 /**
+ * @typedef {object} DiscoveryOptions
+ * @property {boolean} [zoneSensors] one presence sensor per zone and object
+ * @property {{ host: string, port: number } | null} [liveRtsp] where the
+ *   go2rtc restream is reached from Gladys (`resolveLiveRtsp()`); without it,
+ *   no `CAMERA_URL` param is published
+ */
+
+/**
  * @param {{ externalIds: Function }} gladys SDK instance (id helpers only)
  * @param {object} camera from capabilities
- * @param {{ zoneSensors?: boolean }} [options]
+ * @param {DiscoveryOptions} [options]
  */
-export function buildCameraDevice(gladys, camera, { zoneSensors = false } = {}) {
+export function buildCameraDevice(gladys, camera, { zoneSensors = false, liveRtsp = null } = {}) {
   const ids = gladys.externalIds(DEVICE_TYPE, camera.name);
   const id = ids.feature;
   const features = [
@@ -169,17 +180,27 @@ export function buildCameraDevice(gladys, camera, { zoneSensors = false } = {}) 
       }
     }
   }
+  // FRIGATE_CAMERA stays first: it identifies the camera of the device.
+  const params = [{ name: CAMERA_PARAM, value: camera.name }];
+  if (liveRtsp) {
+    params.push({ name: LIVE_PARAM, value: liveRtspUrl(liveRtsp, camera.name) });
+  }
   return {
     name: camera.friendlyName || camera.name,
     external_id: ids.device,
-    params: [{ name: CAMERA_PARAM, value: camera.name }],
+    params,
     should_poll: true,
     poll_frequency: IMAGE_POLL_FREQUENCY_MS,
     features,
   };
 }
 
-/** The complete discovery list of a Frigate instance. */
+/**
+ * The complete discovery list of a Frigate instance.
+ * @param {{ externalIds: Function }} gladys
+ * @param {object | null} capabilities
+ * @param {DiscoveryOptions} [options]
+ */
 export function buildDevices(gladys, capabilities, options) {
   return (capabilities?.cameras ?? []).map((camera) => buildCameraDevice(gladys, camera, options));
 }
@@ -223,7 +244,7 @@ export function parseFeatureId(gladys, externalId) {
  * in memory only, so it is published again on every connection).
  * @param {{ externalIds: Function, publishDiscoveredDevices: Function }} gladys
  * @param {object | null} capabilities null = Frigate not reachable: empty list
- * @param {{ zoneSensors?: boolean }} [options]
+ * @param {DiscoveryOptions} [options]
  * @returns {Promise<number>} number of cameras listed
  */
 export async function publishDiscovery(gladys, capabilities, options) {

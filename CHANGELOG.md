@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Live view: the ⏵ button of the dashboard Camera widget plays a Frigate
+  camera, at home and through Gladys Plus. Each camera device now carries the
+  address of the Frigate go2rtc restream (`rtsp://<Frigate host>:8554/<camera>`),
+  which Gladys converts to HLS like its own RTSP cameras; existing devices
+  get it at the next connection, without being recreated. Two new options set
+  the RTSP host and port when the restream is not on the Frigate host or on
+  port 8554. In remote mode, port 8554 of Frigate must be reachable from the
+  Gladys machine.
+
 ### Changed
 
 - Fork of LM1LC3N7/gladys-frigate: the image is published as

@@ -225,9 +225,44 @@ Exemple — une photo sur votre téléphone quand quelqu'un vient à la porte :
 
 ## Vidéo en direct
 
-La vidéo en direct ne passe pas par cette intégration. Utilisez le service
-**Caméra RTSP** intégré à Gladys, pointé sur le restream go2rtc de Frigate :
-`rtsp://<ip-frigate>:8554/<nom_camera>`.
+Le bouton ⏵ du widget **Caméra** du tableau de bord lit la vidéo en direct
+d'une caméra Frigate, à la maison comme à distance via Gladys Plus. Gladys lit
+le restream go2rtc intégré à Frigate (`rtsp://<hôte>:8554/<nom_camera>`) et le
+convertit en flux HLS chiffré, exactement comme pour ses propres caméras RTSP ;
+le réglage de **latence** du widget s'applique. Rien à ajouter à la main :
+chaque appareil caméra porte l'adresse de son restream, mise à jour
+automatiquement quand vous changez les options ci-dessous (inutile de recréer
+l'appareil).
+
+Prérequis (mode distant, un Frigate existant) :
+
+- Le restream RTSP go2rtc de Frigate est activé (le défaut de Frigate) et
+  chaque caméra a un flux go2rtc portant le nom de la caméra Frigate (section
+  `go2rtc:` → `streams:` de la configuration de Frigate).
+- Le port **8554** de la machine Frigate est publié (ports docker par défaut
+  de Frigate) et joignable depuis la machine Gladys (pare-feu, VLAN).
+- Le restream n'a pas de mot de passe (le défaut de go2rtc) : un restream
+  protégé par un utilisateur et un mot de passe n'est pas pris en charge.
+
+Options (section **Options** de la configuration) :
+
+- **Direct : hôte RTSP** (vide par défaut) : l'hôte de l'URL de Frigate est
+  utilisé. Renseignez-le quand le restream est joignable à une autre adresse
+  (Frigate derrière un reverse proxy, une autre interface réseau). Nom d'hôte
+  ou adresse IP seuls, sans `rtsp://` ni port.
+- **Direct : port RTSP** (8554 par défaut) : le port go2rtc publié, si vous
+  l'avez redirigé ailleurs.
+
+En mode géré (Frigate installé par Gladys), le port attribué par Gladys est
+utilisé automatiquement et l'hôte vaut `127.0.0.1` par défaut.
+
+Limites : chaque personne qui regarde le widget lance sa propre conversion
+ffmpeg sur la machine Gladys (une connexion RTSP à go2rtc par vue en direct,
+pas par caméra), et la vidéo passe par HLS, avec quelques secondes de retard
+sur le temps réel : les flux WebRTC et MSE de go2rtc ne sont pas utilisés. La
+rotation d'image des caméras RTSP de Gladys (`CAMERA_ROTATION`) n'est pas
+disponible. Une caméra désactivée (fonctionnalité « Caméra activée » à 0) ne
+se lit pas en direct, comme dans Frigate.
 
 ## Boutons de la configuration
 

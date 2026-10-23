@@ -153,8 +153,8 @@
         "fr": "Options"
       },
       "description": {
-        "en": "Scene triggers only fire above the minimum confidence, and at most once per camera and cooldown period.",
-        "fr": "Les déclencheurs de scène ne se déclenchent qu'au-dessus de la confiance minimale, et au plus une fois par caméra et par période de cooldown."
+        "en": "Scene triggers only fire above the minimum confidence, and at most once per camera and cooldown period. Live view (the play button of the dashboard Camera widget) reads the go2rtc RTSP restream of Frigate.",
+        "fr": "Les déclencheurs de scène ne se déclenchent qu'au-dessus de la confiance minimale, et au plus une fois par caméra et par période de cooldown. Le direct (bouton lecture du widget Caméra du tableau de bord) lit le restream RTSP go2rtc de Frigate."
       }
     },
     {
@@ -191,6 +191,37 @@
         "fr": "Ajoute un capteur de présence par zone et par objet suivi."
       },
       "default": false
+    },
+    {
+      "key": "live_rtsp_host",
+      "type": "string",
+      "label": {
+        "en": "Live view: RTSP host of the go2rtc restream",
+        "fr": "Direct : hôte RTSP du restream go2rtc"
+      },
+      "description": {
+        "en": "Blank = the host of the Frigate URL, or 127.0.0.1 in managed mode. Host name or IP address only.",
+        "fr": "Vide = l'hôte de l'URL de Frigate, ou 127.0.0.1 en mode géré. Nom d'hôte ou adresse IP seuls."
+      },
+      "placeholder": {
+        "en": "192.168.1.10",
+        "fr": "192.168.1.10"
+      }
+    },
+    {
+      "key": "live_rtsp_port",
+      "type": "number",
+      "label": {
+        "en": "Live view: RTSP port of the go2rtc restream",
+        "fr": "Direct : port RTSP du restream go2rtc"
+      },
+      "description": {
+        "en": "Remote mode only (8554 by default in Frigate). In managed mode, the port assigned by Gladys is used automatically.",
+        "fr": "Mode distant uniquement (8554 par défaut dans Frigate). En mode géré, le port attribué par Gladys est utilisé automatiquement."
+      },
+      "default": 8554,
+      "min": 1,
+      "max": 65535
     },
     {
       "key": "expert_section",

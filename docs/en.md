@@ -211,9 +211,42 @@ Example — a photo on your phone when someone comes to the door:
 
 ## Live video
 
-Live video is not carried by this integration. Use the built-in **RTSP
-camera** service of Gladys pointed at the Frigate go2rtc restream:
-`rtsp://<frigate-ip>:8554/<camera_name>`.
+The ⏵ button of the dashboard **Camera** widget plays the live video of a
+Frigate camera, at home and remotely through Gladys Plus. Gladys reads the
+go2rtc restream embedded in Frigate (`rtsp://<host>:8554/<camera_name>`) and
+turns it into an encrypted HLS stream, exactly as for its own RTSP cameras;
+the widget's **latency** setting applies. Nothing to add by hand: each camera
+device carries the address of its restream, updated automatically when you
+change the options below (no need to recreate the device).
+
+Prerequisites (remote mode, an existing Frigate):
+
+- The go2rtc RTSP restream of Frigate is enabled (Frigate's default) and each
+  camera has a go2rtc stream named after the Frigate camera (the `go2rtc:` →
+  `streams:` section of the Frigate configuration).
+- Port **8554** of the Frigate machine is published (Frigate's default docker
+  ports) and reachable from the Gladys machine (firewall, VLAN).
+- The restream has no password (go2rtc's default): a restream protected by a
+  username and password is not supported.
+
+Options (section **Options** of the configuration):
+
+- **Live view: RTSP host** (blank by default): the host of the Frigate URL is
+  used. Fill it in when the restream is reached at another address (Frigate
+  behind a reverse proxy, a different network interface). Host name or IP
+  address only, without `rtsp://` nor port.
+- **Live view: RTSP port** (8554 by default): the published go2rtc port, if
+  you mapped it elsewhere.
+
+In managed mode (Frigate installed by Gladys), the port assigned by Gladys is
+used automatically and the host defaults to `127.0.0.1`.
+
+Limits: every viewer of the widget starts its own ffmpeg conversion on the
+Gladys machine (one RTSP connection to go2rtc per live view, not per camera),
+and the video goes through HLS, a few seconds behind real time: the WebRTC
+and MSE streams of go2rtc are not used. The image rotation of the Gladys RTSP
+cameras (`CAMERA_ROTATION`) is not available. A disabled camera (the "Camera
+enabled" feature off) does not play live, as in Frigate.
 
 ## Configuration buttons
 
