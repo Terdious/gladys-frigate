@@ -13,6 +13,9 @@ personne, une voiture ou un animal apparaît.
   réellement.
 - Recommandé : le broker MQTT sur lequel Frigate publie. Sans broker,
   l'intégration se rabat sur le WebSocket de Frigate.
+- Pas encore de Frigate ? Gladys peut l'installer et le faire tourner pour
+  vous sur une machine adaptée : voir « Frigate installé par Gladys (mode
+  géré) ».
 
 ## Démarrage rapide
 
@@ -27,6 +30,131 @@ personne, une voiture ou un animal apparaît.
 4. Dans l'onglet **Découverte**, cliquez sur **Ajouter à Gladys** pour vos
    caméras.
 5. Créez des scènes avec les déclencheurs **Frigate** (voir Scènes).
+
+## Frigate installé par Gladys (mode géré)
+
+Pas encore de Frigate ? Choisissez **Frigate installé par Gladys (géré)**
+dans la section **Déploiement** : Gladys fait tourner Frigate 0.18 dans un
+conteneur à lui, à côté de l'intégration, et écrit sa configuration pour
+vous. Sinon, gardez **Instance Frigate existante (distante)**, le
+fonctionnement décrit dans le reste de cette page.
+
+### Prérequis
+
+- Une machine adaptée à l'analyse vidéo : un mini PC x86 récent (Intel N100
+  ou mieux), idéalement avec un Google Coral ou un GPU Intel. Frigate dispose
+  de 4 Go de RAM et 2 CPU au plus. Sur un **Raspberry Pi ou un NAS**,
+  préférez un Frigate existant sur une machine à part (mode distant).
+- De la place pour les enregistrements : ils sont stockés dans le dossier de
+  données de Gladys (une carte SD s'use vite en enregistrement continu —
+  préférez un SSD).
+- L'image Frigate (plus de 1 Go) est téléchargée à l'installation de
+  l'intégration, même si vous ne la démarrez jamais.
+
+### Accélération matérielle
+
+À l'installation de l'intégration, Gladys liste le matériel que le conteneur
+Frigate peut utiliser — **Coral USB**, **Coral PCIe**, **GPU** (`/dev/dri`) —
+avec ce qu'il a détecté. Autorisez ce que vous avez ; vous pouvez le changer
+ensuite dans le bloc **Matériel** de l'intégration (contrôles de
+supervision) : Gladys recrée alors le conteneur Frigate, et l'intégration
+régénère la configuration et redémarre Frigate.
+
+- **Détecteur d'objets** (section mode géré) : **Automatique** choisit un
+  Coral (USB, puis PCIe), puis un GPU Intel (OpenVINO), sinon le CPU. Un choix
+  explicite dont le matériel n'est pas autorisé ou pas détecté revient au
+  choix automatique, et le statut le dit.
+- **Fabricant du GPU** : l'intégration ne peut pas le lire depuis son
+  conteneur. Intel : détection OpenVINO et décodage vidéo VAAPI
+  (`ffmpeg.hwaccel_args: preset-vaapi`) ; AMD : décodage VAAPI seulement,
+  détection sur CPU ; Aucun : le GPU n'est pas utilisé. Les GPU NVIDIA ne
+  sont pas pris en charge en mode géré.
+- La détection sur CPU seul fonctionne, lentement et en consommant beaucoup :
+  le statut le signale.
+
+### Démarrer, arrêter, redémarrer
+
+1. Choisissez le mode géré, enregistrez. Le statut indique « pas encore
+   démarré ».
+2. Cliquez sur **Démarrer Frigate** : l'intégration écrit la configuration de
+   Frigate, puis demande à Gladys de démarrer le conteneur. Le statut suit :
+   « démarre… », puis « Connecté à Frigate 0.18.0 (installé par Gladys) ». Le
+   premier démarrage peut prendre quelques minutes.
+3. Cliquez sur **Afficher les identifiants Frigate** : l'adresse de
+   l'interface Frigate, `https://<adresse de Gladys>:<port>` (le port
+   attribué par Gladys, aussi le lien « Interface Frigate » du bloc de
+   supervision et de la section mode géré), et le compte `admin` créé par
+   l'intégration. Le certificat est auto-signé : acceptez-le dans votre
+   navigateur. La réponse n'est affichée que pour vous.
+4. Dans l'interface Frigate, ajoutez vos caméras (son éditeur de
+   configuration), puis **Rafraîchir les caméras** et ajoutez-les depuis
+   l'onglet Découverte, comme en mode distant. La gestion des caméras depuis
+   Gladys arrive dans une version suivante.
+
+**Arrêter Frigate** arrête le conteneur (Gladys ne le relance pas) ;
+**Redémarrer Frigate** régénère la configuration et le redémarre.
+Enregistrer la configuration de l'intégration applique aussitôt les réglages
+du mode géré : un Frigate démarré ne redémarre que si sa configuration
+change vraiment.
+
+### Configuration et données
+
+L'intégration n'écrit que les parties de `config.yml` qui lui reviennent ;
+tout ce que vous réglez dans l'interface Frigate (caméras, zones, masques,
+flux go2rtc, utilisateurs) est conservé :
+
+- `mqtt` : désactivé, ou le broker de la section **Flux temps réel** —
+  Frigate publie alors sur ce broker **avec le même compte** que
+  l'intégration : son ACL doit alors contenir `topic readwrite frigate/#`.
+  Le mot de passe du broker est transmis à Frigate par l'environnement de son
+  conteneur, jamais dans `config.yml`. MQTT sur TLS : Frigate n'accepte qu'un
+  certificat de broker signé par une autorité publique, ou par l'autorité
+  collée dans les réglages experts (un broker auto-signé doit l'y avoir ;
+  une empreinte épinglée ne s'applique pas à Frigate). Sans broker,
+  l'intégration utilise le WebSocket de Frigate.
+- `detectors` (et la section `model` d'OpenVINO qui va avec), et
+  `ffmpeg.hwaccel_args` quand VAAPI s'applique et que vous n'avez pas écrit de
+  section `ffmpeg`. En mode automatique, une section `detectors` écrite par
+  vous est conservée.
+- La conservation des enregistrements : **continu** (2 jours par défaut),
+  **alertes** (7), **détections** (7) et **captures** (14) ; 0 = aucun. Une
+  valeur enregistrée dans Gladys l'emporte ; videz un champ pour garder la
+  valeur réglée dans l'interface Frigate.
+
+Où sont les données, dans le dossier de données de l'intégration
+(`/data/containers/frigate/…` vu de l'intégration) :
+
+| Dossier         | Contenu                                                     |
+| --------------- | ----------------------------------------------------------- |
+| `config`        | `config.yml`, la base de Frigate (utilisateurs, événements) |
+| `media/frigate` | enregistrements, clips et captures                          |
+| `tmp/cache`     | segments d'enregistrement en cours d'écriture               |
+
+`/tmp/cache` est un dossier sur disque, pas en mémoire : le bac à sable de
+Gladys monte un `/tmp` de 64 Mo en RAM, trop petit pour le cache de Frigate.
+L'intégration garde le mot de passe admin dans son propre
+`managed/state.json` (lisible par elle seule). Désinstaller l'intégration
+supprime tout, enregistrements compris.
+
+### Frigate ne reste pas démarré
+
+Le bac à sable de Gladys applique à Frigate les mêmes limites qu'à tout
+conteneur d'intégration : **100 processus et threads** au plus, un `/tmp` de
+64 Mo, **aucune capability Linux**, trois ports publiés. Frigate (un ffmpeg
+par caméra, go2rtc, nginx, des workers Python) peut ne pas démarrer ou
+s'arrêter sous ces limites. Le statut indique alors « Frigate ne reste pas
+démarré » (le conteneur redémarre sans cesse) ou « ne répond pas depuis
+5 min ». Que faire :
+
+- **Redémarrer Frigate** une fois, et consulter les journaux de
+  l'intégration.
+- Moins de caméras, ou un Coral plutôt que la détection sur CPU, utilisent
+  moins de processus.
+- Gladys compte les plantages : au bout de cinq, il arrête toute
+  l'intégration.
+- Si cela persiste, utilisez un Frigate existant sur une machine à part (mode
+  distant) : ces limites sont en cours d'assouplissement dans Gladys
+  (réglages du bac à sable des sous-conteneurs).
 
 ## Connexion à Frigate
 
@@ -338,6 +466,12 @@ se lit pas en direct, comme dans Frigate.
   de Frigate et du broker, se reconnecte et affiche l'empreinte désormais
   épinglée. En cas de doute, comparez-la à celle de votre Frigate (commande
   ci-dessus).
+- **Démarrer Frigate**, **Arrêter Frigate**, **Redémarrer Frigate**,
+  **Afficher les identifiants Frigate** : mode géré uniquement (voir
+  « Frigate installé par Gladys ») ; en mode distant, ils répondent qu'ils
+  ne s'appliquent pas. En mode géré, **Tester la connexion** montre aussi
+  l'état du conteneur Frigate, le détecteur, la conservation et l'espace
+  occupé par les enregistrements.
 
 Quand Frigate est injoignable, l'intégration réessaie chaque minute. Un
 certificat ou des identifiants refusés attendent en revanche votre action :
@@ -360,6 +494,11 @@ réessayer ne ferait que bloquer le compte (Frigate limite les connexions
   dans le statut.
 - Le port 5000 et MQTT sans TLS fonctionnent, avec un avertissement dans le
   statut : réservez-les à un réseau de confiance.
+- Mode géré : l'intégration joint Frigate sur son port interne 5000
+  uniquement par le réseau privé de l'intégration (jamais publié sur votre
+  réseau) ; vous accédez à l'interface Frigate par son port authentifié, avec
+  le compte `admin` créé par l'intégration. Seuls l'interface et le restream
+  RTSP go2rtc sont publiés, sur des ports choisis par Gladys.
 
 ## Dépannage
 
@@ -370,6 +509,9 @@ passe ni de jeton.
 
 | Symptôme                                                | À vérifier                                                                                                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| « Frigate ne reste pas démarré » (mode géré)            | Les limites du bac à sable de Gladys (100 processus, `/tmp` de 64 Mo, aucune capability) : voir « Frigate ne reste pas démarré ». Le mode distant les contourne.   |
+| « pas encore démarré » (mode géré)                      | Cliquez sur **Démarrer Frigate** ; Frigate ne démarre jamais seul la première fois.                                                                                |
+| Le statut géré indique « aucun sous-conteneur Frigate » | Mettez à jour Gladys et l'intégration (les sous-conteneurs demandent Gladys 5.1 ou plus), ou choisissez le mode distant.                                           |
 | « Le certificat de … a changé »                         | Frigate réinstallé ou certificat régénéré : cliquez sur **Faire confiance au nouveau certificat**. Sinon, quelqu'un se fait peut-être passer pour Frigate.         |
 | « Frigate a refusé l'utilisateur ou le mot de passe »   | Le compte de l'onglet Configuration. Après plusieurs échecs, Frigate bloque les connexions un moment : l'intégration ne réessaie pas d'elle-même.                  |
 | L'onglet Découverte est vide                            | Le statut : Frigate doit être joignable. Puis **Scanner**.                                                                                                         |

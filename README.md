@@ -54,8 +54,18 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   (`rtsp://<host>:8554/<camera>`), which the core `rtsp-camera` service turns
   into encrypted HLS: no core change, no video through this container.
 
+- **Managed mode** (0.4.0, issues #3, #4, #5): Frigate 0.18 run by Gladys as
+  the `frigate` sub-container of the manifest (`start: manual`), driven by the
+  Start / Stop / Restart buttons. The integration generates `config.yml`
+  (MQTT, detector from the granted hardware — Coral, Intel GPU/OpenVINO, CPU —,
+  VAAPI decoding, recording retention) and keeps everything set in the
+  Frigate UI; it sets Frigate's admin password ("Show the Frigate
+  credentials") and talks to Frigate on its internal port 5000. Cameras are
+  added in the Frigate UI until camera management (0.5.0).
+
 Out of scope for now: faces and plates, classification, widgets, profiles,
-multiple Frigate instances, sub-containers (see [`ROADMAP.md`](./ROADMAP.md)).
+multiple Frigate instances, camera management from Gladys (see
+[`ROADMAP.md`](./ROADMAP.md)).
 
 ## Architecture
 
@@ -77,9 +87,18 @@ src/frigate/      Frigate client — NO Gladys dependency (enforced by ESLint)
   topics.js         MQTT / WebSocket messages -> typed messages
   eventEngine.js    events + reviews -> deduplicated transitions (score, cooldown)
   errors.js         typed errors, never carrying a secret
+  managed/          managed mode, still without any Gladys dependency
+    constants.js      Frigate image (one version), container and port names, presets
+    detector.js       granted hardware (+ GPU vendor) -> detector, VAAPI, notes
+    configFile.js     idempotent config.yml generation (Gladys-owned sections only)
+    adminAccount.js   admin password bootstrap (PUT /api/users/admin/password)
+    stateFile.js      /data/managed/state.json (0600): admin password, last start
 src/gladys/       thin adapter to the Gladys SDK
-  frigateSession.js connection lifecycle, real-time feed, status, the three buttons,
-                    resync when Frigate is back, MQTT flapping report
+  frigateSession.js connection lifecycle, real-time feed, status, the buttons,
+                    resync when Frigate is back, MQTT flapping report; managed mode:
+                    sub-container state in the status, start polling, crash loop
+  managed.js        managed mode adapter: getContainers / start / stop / restart,
+                    hardware grants, credentials, en/fr texts
   discovery.js      Frigate cameras -> Gladys devices (Discover tab)
   live.js           live view: go2rtc restream URL (CAMERA_URL param), both modes
   images.js         camera images (resized by Frigate): 60 KB stored, 150 KB live
@@ -93,8 +112,9 @@ src/gladys/       thin adapter to the Gladys SDK
   status.js         connection status message (errors and security warnings)
 ```
 
-Runtime dependencies: `@gladysassistant/integration-sdk`, `mqtt` and `undici` (custom CA and certificate pinning for `fetch`
-and the WebSocket fallback; v7, the last line supporting Node 20).
+Runtime dependencies: `@gladysassistant/integration-sdk`, `mqtt`, `undici` (custom CA and certificate pinning for `fetch`
+and the WebSocket fallback) and `yaml` (managed mode: Frigate's `config.yml` edited as a document, comments and
+user sections kept).
 
 ## Development
 
@@ -123,7 +143,11 @@ LOG_LEVEL=debug npm start
 ```
 
 `FRIGATE_DATA_DIR` (default `/data`, the container volume) is where the
-pinned certificates are saved.
+pinned certificates are saved, and, in managed mode, the Frigate
+configuration (`containers/frigate/config/config.yml`) and
+`managed/state.json`. `FRIGATE_MANAGED_URL` (default `http://frigate:5000`,
+the sub-container on the private network) points the managed mode at another
+Frigate, for development and `test/index.managed.e2e.test.js`.
 
 `test/fixtures/tls/` holds test-only certificates (a test CA and a
 `localhost` certificate); they are never used outside the test suite.
