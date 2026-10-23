@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Managed mode: the Frigate sub-container declares `pids_limit: 1024` and the
+  ten Linux capabilities of Docker's default set it needs (`CHOWN`,
+  `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETGID`, `SETUID`, `SETPCAP`, `KILL`,
+  `NET_BIND_SERVICE`, `SYS_CHROOT`), granted by the user at install; the
+  integration now requires Gladys 5.3.0, the first core that knows these
+  fields (GladysAssistant/Gladys#3262). Measured on a real machine: Frigate
+  0.18 starts completely with them, and not at all without.
+
 ## [0.6.0] - 2026-10-23
 
 ### Added
