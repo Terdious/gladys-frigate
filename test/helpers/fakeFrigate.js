@@ -58,6 +58,9 @@ export const FRONT_PTZ_INFO = {
  *   /api/<camera>/ptz/info answer, or an HTTP status to fail with (404 for
  *   a camera missing here)
  * @param {(req, res) => boolean} [options.override] return true when handled
+ * @param {(attempt: number) => number} [options.adminPasswordStatus] status of the
+ *   n-th `PUT /api/users/admin/password` (the internal port 5000 asks no login)
+ * @param {object | null} [options.stats] served by /api/stats (null: 404)
  * @param {(query: { camera: string, height: number, quality: number }) => number} [options.imageBytes]
  *   size of the JPEG served by /api/<camera>/latest.jpg
  */
@@ -69,14 +72,32 @@ export async function startFakeFrigate({
   ptzInfo = {},
   override,
   imageBytes = () => 20_000,
+  adminPasswordStatus = () => 200,
+  stats = null,
 } = {}) {
   const calls = [];
+  const adminPasswords = []; // bodies of PUT /api/users/admin/password
   let tokenExp = Math.floor(Date.now() / 1000) + 3600;
   const tokens = new Set();
 
   const handler = (req, res) => {
     calls.push({ method: req.method, url: req.url, authorization: req.headers.authorization });
     if (override?.(req, res)) {
+      return;
+    }
+    if (req.url === '/api/users/admin/password' && req.method === 'PUT') {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        adminPasswords.push(JSON.parse(body || '{}').password);
+        res.statusCode = adminPasswordStatus(adminPasswords.length);
+        res.end('{}');
+      });
+      return;
+    }
+    if (req.url === '/api/stats' && stats) {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(stats));
       return;
     }
     if (req.url === '/api/version') {
@@ -201,6 +222,7 @@ export async function startFakeFrigate({
     port,
     url: `${secure ? 'https' : 'http'}://127.0.0.1:${port}`,
     calls,
+    adminPasswords,
     wsReceived,
     get wsClientCount() {
       return wsClients.size;
