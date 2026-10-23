@@ -36,7 +36,23 @@ const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url
 const valueFields = manifest.config_schema.filter((f) => f.type !== 'section');
 
 test('the manifest requires Gladys 5.1+ (scene triggers and actions)', () => {
-  assert.equal(manifest.gladys_version, '>=5.1.0');
+  // 5.3.0: the first core with bounded sub-container capabilities and pids_limit
+  // (GladysAssistant/Gladys#3262), without which Frigate cannot start.
+  assert.equal(manifest.gladys_version, '>=5.3.0');
+  const [frigate] = manifest.containers;
+  assert.equal(frigate.pids_limit, 1024);
+  assert.deepEqual(frigate.capabilities, [
+    'CHOWN',
+    'DAC_OVERRIDE',
+    'FOWNER',
+    'FSETID',
+    'SETGID',
+    'SETUID',
+    'SETPCAP',
+    'KILL',
+    'NET_BIND_SERVICE',
+    'SYS_CHROOT',
+  ]);
 });
 
 test('the manifest version and image tag follow package.json', () => {
