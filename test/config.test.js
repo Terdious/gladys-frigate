@@ -4,6 +4,8 @@ import { X509Certificate } from 'node:crypto';
 import {
   DEFAULT_CONFIG,
   configWarnings,
+  explicitRetention,
+  isManaged,
   normalizeConfig,
   normalizeFingerprint,
   normalizePem,
@@ -198,4 +200,44 @@ test('no secret ends up in a status message', () => {
 
 test('the CA fixture is a certificate authority', () => {
   assert.equal(new X509Certificate(TEST_CA_PEM).ca, true);
+});
+
+test('managed mode: the mode, detector and vendor accept their values only', () => {
+  assert.equal(normalizeConfig().mode, 'remote', 'remote by default: today behavior');
+  const config = normalizeConfig({ mode: 'managed', detector: 'coral', gpu_vendor: 'amd' });
+  assert.equal(isManaged(config), true);
+  assert.equal(config.detector, 'coral');
+  assert.equal(config.gpu_vendor, 'amd');
+  const unknown = normalizeConfig({ mode: 'cloud', detector: 'tpu', gpu_vendor: 'nvidia' });
+  assert.deepEqual(
+    [unknown.mode, unknown.detector, unknown.gpu_vendor],
+    ['remote', 'auto', 'intel'],
+  );
+});
+
+test('managed mode: retention days are clamped; blank keeps the value of config.yml', () => {
+  const config = normalizeConfig({ record_continuous_days: -3, snapshots_retain_days: 99999 });
+  assert.equal(config.record_continuous_days, 0);
+  assert.equal(config.snapshots_retain_days, 3650);
+  assert.deepEqual(explicitRetention({ record_continuous_days: 0, record_alerts_days: '' }), {
+    continuous: 0,
+    alerts: null,
+    detections: null,
+    snapshots: null,
+  });
+});
+
+test('managed mode: no Frigate URL nor account required, the MQTT checks still apply', () => {
+  assert.equal(validateConfig(normalizeConfig({ mode: 'managed' })), null);
+  assert.equal(validateConfig(normalizeConfig({ mode: 'managed', username: 'half' })), null);
+  assert.ok(validateConfig(normalizeConfig({ mode: 'managed', mqtt_host: 'mqtt://broker' })));
+  assert.ok(validateConfig(normalizeConfig({ mode: 'remote' })), 'remote still needs its URL');
+});
+
+test('managed mode: no "port 5000" warning, a note for MQTT over TLS without authority', () => {
+  const internal = { mode: 'managed', frigate_url: 'http://frigate:5000' };
+  assert.deepEqual(configWarnings(normalizeConfig(internal)), []);
+  const tls = configWarnings(normalizeConfig({ ...internal, mqtt_host: 'b', mqtt_tls: true }));
+  assert.equal(tls.length, 1);
+  assert.match(tls[0].en, /Frigate only trusts/);
 });

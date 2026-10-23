@@ -26,11 +26,20 @@
 //   - A Frigate dropping its broker connection again and again (three
 //     "offline" within five minutes) is reported: its messages are lost,
 //     and the usual cause is another MQTT client using its client_id.
+//   - Managed mode (Frigate as the `frigate` sub-container, ./managed.js):
+//     the connection is derived (http://frigate:5000, no account, no TLS),
+//     and the state of the sub-container drives the status — not started,
+//     stopped, starting (polled every 5 s, a bounded number of times, until
+//     Frigate answers /api/version), not staying up — before the usual read
+//     of Frigate. Once Frigate answers, its admin password is set (once).
+//     Saving the configuration regenerates config.yml and restarts a running
+//     Frigate only when its file or environment changed. The remote mode
+//     path is unchanged.
 //
 // Thin adapter: the Frigate logic lives in src/frigate/.
 // -----------------------------------------------------------------------------
 
-import { configWarnings, usesMqtt } from '../config.js';
+import { configWarnings, isManaged, usesMqtt } from '../config.js';
 import { readCapabilities, readPtzCapabilities } from '../frigate/capabilities.js';
 import { HttpStatusError, UnreachableError } from '../frigate/errors.js';
 import { createEventEngine } from '../frigate/eventEngine.js';
@@ -39,6 +48,14 @@ import { createMqttFeed } from '../frigate/mqttClient.js';
 import { probeMqtt } from '../frigate/mqttProbe.js';
 import { parseMessage } from '../frigate/topics.js';
 import { createWsFeed, readCameraActivity } from '../frigate/wsClient.js';
+import {
+  MANAGED_TEXT,
+  describeDetector,
+  describeManagedError,
+  describeRetention,
+  describeStorage,
+  notAnswering,
+} from './managed.js';
 import { describeAuth, describeError, describeFeed, describeTls } from './messages.js';
 import { composeMessage, describeConfig } from './status.js';
 
@@ -55,6 +72,15 @@ const UNSAVED_PINS = {
   fr: 'Les certificats épinglés ne peuvent pas être enregistrés dans /data : après un redémarrage, la connexion suivante approuve de nouveau le certificat présenté.',
 };
 const MAX_LISTED_CAMERAS = 10;
+// Managed mode: how often the sub-container is polled while Frigate starts,
+// how many times before saying it does not answer (then every retryDelayMs).
+const MANAGED_POLL_MS = 5_000;
+const MANAGED_MAX_POLLS = 60;
+// A sub-container restarted this many times within the window, or wanted
+// running but down for that long, "does not stay up".
+const CRASH_RESTARTS = 3;
+const CRASH_WINDOW_MS = 10 * 60_000;
+const CRASH_DOWN_MS = 90_000;
 
 const isTransient = (err) =>
   err instanceof UnreachableError || (err instanceof HttpStatusError && err.status >= 500);
@@ -122,6 +148,12 @@ export function createFeed({ config, client, trustStore }) {
  * @param {Function} [options.activityReader] readCameraActivity (tests)
  * @param {number} [options.resyncDelayMs] minimum delay between two re-reads
  * @param {() => number} [options.now]
+ * @param {ReturnType<import('./managed.js').createManagedFrigate> | null} [options.managed]
+ *   the managed-mode adapter (null: the managed mode is refused)
+ * @param {number} [options.managedPollMs]
+ * @param {number} [options.managedMaxPolls]
+ * @param {(container: object | null) => void} [options.onContainer] every read
+ *   of the Frigate sub-container (managed mode)
  */
 export function createFrigateSession({
   gladys,
@@ -140,6 +172,10 @@ export function createFrigateSession({
   activityReader = readCameraActivity,
   resyncDelayMs = RESYNC_DELAY_MS,
   now = Date.now,
+  managed = null,
+  managedPollMs = MANAGED_POLL_MS,
+  managedMaxPolls = MANAGED_MAX_POLLS,
+  onContainer = () => {},
 }) {
   let config = null;
   let raw = {};
@@ -160,6 +196,53 @@ export function createFrigateSession({
   let flapping = false;
   let flapTimer = null;
   let activityError = null; // last camera_activity failure logged
+  // Managed mode.
+  let watchTimer = null;
+  let watchPolls = 0; // reads of the sub-container while Frigate does not answer
+  let container = null; // last `frigate` entry of GET /container
+  let tracker = newTracker();
+  let adminDone = false;
+  let adminError = null;
+
+  function newTracker() {
+    return { startedAt: null, restarts: [], downSince: null };
+  }
+
+  /**
+   * The state of the sub-container, and whether it fails to stay up: Gladys
+   * restarts a container wanted running that exits (with a backoff), so a
+   * crash shows as a new `started_at`, or as a long time down.
+   * @returns {'unsupported' | 'stopped' | 'waiting' | 'running'}
+   */
+  function track(entry) {
+    if (!entry) {
+      return 'unsupported';
+    }
+    const time = now();
+    const running = entry.status === 'running';
+    const wanted = entry.desired === 'running';
+    if (running) {
+      if (tracker.startedAt && entry.started_at && entry.started_at !== tracker.startedAt) {
+        tracker.restarts.push(time);
+      }
+      tracker.startedAt = entry.started_at ?? tracker.startedAt;
+      tracker.downSince = null;
+    } else if (wanted) {
+      tracker.downSince ??= time;
+    } else {
+      tracker.downSince = null;
+    }
+    tracker.restarts = tracker.restarts.filter((at) => time - at < CRASH_WINDOW_MS);
+    if (running) return 'running';
+    return wanted ? 'waiting' : 'stopped';
+  }
+
+  function crashLooping() {
+    return (
+      tracker.restarts.length >= CRASH_RESTARTS ||
+      (tracker.downSince != null && now() - tracker.downSince >= CRASH_DOWN_MS)
+    );
+  }
   let lastPtz = new Map(); // camera -> last PTZ capabilities read (same Frigate URL)
 
   /** Publishes the status, unless it is the one already shown. */
@@ -312,6 +395,10 @@ export function createFrigateSession({
       if (state === 'connected') {
         // MQTT retains no object count: read the current ones.
         refreshActivity(currentGeneration);
+      } else if (error && isManaged(config) && feed?.mode === 'websocket' && !watchTimer) {
+        // The WebSocket of a managed Frigate dropped: the sub-container may
+        // have stopped. Its state says so sooner than the next retry.
+        scheduleWatch(currentGeneration, managedPollMs);
       }
     });
     onFeedStatus(created.status);
@@ -366,17 +453,40 @@ export function createFrigateSession({
     return result;
   }
 
+  /** The managed-mode sentences of the connected status. */
+  function managedParts() {
+    if (!isManaged(config)) {
+      return [];
+    }
+    const parts = [];
+    if (capabilities.cameras.length === 0) {
+      parts.push({
+        en: 'Add your cameras in the Frigate UI ("Show the Frigate credentials" gives its address and login).',
+        fr: "Ajoutez vos caméras dans l'interface Frigate (« Afficher les identifiants Frigate » donne son adresse et l'identifiant).",
+      });
+    }
+    parts.push(...describeDetector(managed?.decision, managed?.lastWrite ?? {}));
+    if (adminError) {
+      parts.push(MANAGED_TEXT.ADMIN_PENDING);
+    }
+    return parts;
+  }
+
   function connectedMessage() {
     const { version } = capabilities;
     const summary = cameraSummary(capabilities);
+    const where = isManaged(config)
+      ? { en: ' (installed by Gladys)', fr: ' (installé par Gladys)' }
+      : { en: '', fr: '' };
     return composeMessage([
       {
-        en: `Connected to Frigate ${version.raw}, ${summary.en}.`,
-        fr: `Connecté à Frigate ${version.raw}, ${summary.fr}.`,
+        en: `Connected to Frigate ${version.raw}${where.en}, ${summary.en}.`,
+        fr: `Connecté à Frigate ${version.raw}${where.fr}, ${summary.fr}.`,
       },
       // While it flaps, "offline" would change the status every few seconds.
       feed ? describeFeed(feed, flapping ? null : frigateOnline) : null,
       flapping ? FLAPPING : null,
+      ...managedParts(),
       ...configWarnings(config),
       trustStore.saveError ? UNSAVED_PINS : null,
     ]);
@@ -402,6 +512,9 @@ export function createFrigateSession({
       );
       startFeed(currentGeneration);
       onFrigateStatus(true);
+      if (isManaged(config)) {
+        bootstrapAdmin(currentGeneration);
+      }
       await publishConnected();
     } catch (err) {
       if (currentGeneration !== generation) {
@@ -412,7 +525,9 @@ export function createFrigateSession({
       logger.warn(`Frigate is not available: ${err.message}`);
       await setStatus(false, composeMessage([describeError(err), ...configWarnings(config)]));
       if (isTransient(err)) {
-        retryTimer = setTimeout(() => check(currentGeneration).catch(() => {}), retryDelayMs);
+        // Managed: the sub-container may be the reason, read its state.
+        const retry = isManaged(config) ? watchManaged : check;
+        retryTimer = setTimeout(() => retry(currentGeneration).catch(() => {}), retryDelayMs);
         retryTimer.unref?.();
       }
       throw err;
@@ -421,6 +536,138 @@ export function createFrigateSession({
     await onConnected(capabilities).catch((err) =>
       logger.warn(`Could not publish the Frigate cameras to Gladys: ${err.message}`),
     );
+  }
+
+  /** Frigate no longer answers (managed): forget what was read of it. */
+  async function markDown() {
+    clearTimeout(retryTimer);
+    if (capabilities) {
+      capabilities = null;
+      await stopFeed();
+    }
+    onFrigateStatus(false);
+  }
+
+  function scheduleWatch(currentGeneration, delayMs) {
+    clearTimeout(watchTimer);
+    watchTimer = setTimeout(() => watchManaged(currentGeneration).catch(() => {}), delayMs);
+    watchTimer.unref?.();
+  }
+
+  /** Set the Frigate admin password once, in the background. */
+  function bootstrapAdmin(currentGeneration) {
+    if (adminDone || !managed) {
+      return;
+    }
+    managed
+      .ensureAdmin()
+      .then(() => {
+        adminDone = true;
+        if (adminError) {
+          adminError = null;
+          if (currentGeneration === generation) publishConnected();
+        }
+      })
+      .catch((err) => {
+        logger.warn(`Could not set the Frigate admin password yet: ${err.message}`);
+        adminError = err;
+        if (currentGeneration === generation) publishConnected();
+      });
+  }
+
+  /**
+   * Managed mode: read the state of the sub-container, publish it, and read
+   * Frigate once it answers. Polls while Frigate starts.
+   */
+  async function watchManaged(currentGeneration) {
+    clearTimeout(watchTimer);
+    watchTimer = null;
+    if (currentGeneration !== generation || !managed || !client) {
+      return;
+    }
+    let entry;
+    try {
+      entry = await managed.container();
+    } catch (err) {
+      if (currentGeneration !== generation) return;
+      logger.warn(`Could not read the state of the Frigate container: ${err.message}`);
+      await markDown();
+      await setStatus(false, composeMessage([describeManagedError(err)]));
+      scheduleWatch(currentGeneration, retryDelayMs);
+      return;
+    }
+    if (currentGeneration !== generation) return;
+    container = entry;
+    onContainer(entry);
+    const state = track(entry);
+    if (state === 'unsupported' || state === 'stopped') {
+      await markDown();
+      watchPolls = 0;
+      let message = MANAGED_TEXT.UNSUPPORTED;
+      if (state === 'stopped') {
+        message = (await managed.everStarted()) ? MANAGED_TEXT.STOPPED : MANAGED_TEXT.NOT_STARTED;
+      }
+      await setStatus(false, composeMessage([message, ...configWarnings(config)]));
+      return;
+    }
+    // Whatever happened before, a Frigate that answers is connected.
+    if (state === 'running') {
+      let up = false;
+      try {
+        await client.getVersion();
+        up = true;
+      } catch {
+        // Not answering yet: starting.
+      }
+      if (currentGeneration !== generation) return;
+      if (up) {
+        watchPolls = 0;
+        await check(currentGeneration).catch(() => {});
+        return;
+      }
+    }
+    await markDown();
+    watchPolls += 1;
+    let message = state === 'running' ? MANAGED_TEXT.STARTING : MANAGED_TEXT.WAITING;
+    if (crashLooping()) {
+      message = MANAGED_TEXT.CRASH_LOOP;
+    } else if (watchPolls >= managedMaxPolls) {
+      message = notAnswering(Math.max(1, Math.round((managedMaxPolls * managedPollMs) / 60_000)));
+    }
+    await setStatus(false, composeMessage([message, ...configWarnings(config)]));
+    scheduleWatch(currentGeneration, watchPolls >= managedMaxPolls ? retryDelayMs : managedPollMs);
+  }
+
+  /**
+   * A deliberate gesture (start, stop, restart, new hardware) opens a new
+   * phase: a watch or a read still running from before must not publish
+   * its outdated status over the new one.
+   */
+  function newPhase() {
+    generation += 1;
+    clearTimeout(watchTimer);
+    clearTimeout(retryTimer);
+  }
+
+  /** Start watching afresh after a deliberate gesture (start, restart…). */
+  function restartWatch() {
+    newPhase();
+    tracker = newTracker();
+    watchPolls = 0;
+    const currentGeneration = generation;
+    // Not awaited: the button answers at once, the status follows.
+    watchManaged(currentGeneration).catch(() => {});
+  }
+
+  /** The managed-mode buttons refuse to run in remote mode. */
+  function managedGuard() {
+    if (!isManaged(config) || !managed) {
+      return MANAGED_TEXT.ONLY_MANAGED;
+    }
+    if (!client) {
+      return invalidConfigAnswer();
+    }
+    return null;
   }
 
   async function checkMqtt() {
@@ -475,6 +722,18 @@ export function createFrigateSession({
         minScore: config.min_score,
         cooldownSeconds: config.trigger_cooldown,
       });
+      clearTimeout(watchTimer);
+      if (isManaged(config)) {
+        if (!managed) {
+          await stopFeed();
+          await client?.close();
+          client = null;
+          await setStatus(false, MANAGED_TEXT.UNSUPPORTED);
+          return;
+        }
+        // Frigate's internal port, on the private network: no account, no TLS.
+        config = { ...config, frigate_url: managed.url, username: '', password: '' };
+      }
       const { valid, message } = describeConfig(config, raw);
       if (!valid) {
         await stopFeed();
@@ -485,7 +744,22 @@ export function createFrigateSession({
         return;
       }
       await replaceClient();
-      await check(currentGeneration).catch(() => {});
+      if (!isManaged(config)) {
+        await check(currentGeneration).catch(() => {});
+        return;
+      }
+      tracker = newTracker();
+      watchPolls = 0;
+      try {
+        // A running Frigate gets the saved settings (restarted only when its
+        // config.yml or environment changed).
+        await managed.refresh(config, raw);
+      } catch (err) {
+        logger.warn(`Could not apply the configuration to Frigate: ${err.message}`);
+        await setStatus(false, composeMessage([describeManagedError(err)]));
+        return;
+      }
+      await watchManaged(currentGeneration);
     },
 
     /** The last capabilities read (null while not connected). */
@@ -516,6 +790,28 @@ export function createFrigateSession({
         return invalidConfigAnswer();
       }
       const parts = [];
+      const managedMode = isManaged(config) && managed;
+      if (managedMode) {
+        try {
+          const entry = await managed.container();
+          container = entry;
+          onContainer(entry);
+          const inspected = await managed.inspect(config, raw, entry);
+          const state = entry
+            ? {
+                en: `Frigate container: ${entry.status} (wanted: ${entry.desired ?? 'unknown'}).`,
+                fr: `Conteneur Frigate : ${entry.status} (souhaité : ${entry.desired ?? 'inconnu'}).`,
+              }
+            : MANAGED_TEXT.UNSUPPORTED;
+          parts.push(
+            state,
+            ...describeDetector(inspected.decision, inspected),
+            describeRetention(inspected.retention),
+          );
+        } catch (err) {
+          parts.push(describeManagedError(err));
+        }
+      }
       // A feed stopped on a refused certificate or account: try it again
       // (the user may have fixed the broker, or trusted the certificate).
       if (feed?.status.state === 'failed') {
@@ -528,15 +824,23 @@ export function createFrigateSession({
             en: `Frigate ${capabilities.version.raw}: ${cameraSummary(capabilities).en}.`,
             fr: `Frigate ${capabilities.version.raw} : ${cameraSummary(capabilities).fr}.`,
           },
-          (() => {
-            const tls = describeTls(client.tlsDecision);
-            const auth = describeAuth(client.authMode, config.username);
-            return {
-              en: `Certificate: ${tls.en}. Account: ${auth.en}.`,
-              fr: `Certificat : ${tls.fr}. Compte : ${auth.fr}.`,
-            };
-          })(),
+          managedMode
+            ? {
+                en: 'Reached on its internal port, on the private network of the integration (no account needed).',
+                fr: "Joint sur son port interne, sur le réseau privé de l'intégration (aucun compte nécessaire).",
+              }
+            : (() => {
+                const tls = describeTls(client.tlsDecision);
+                const auth = describeAuth(client.authMode, config.username);
+                return {
+                  en: `Certificate: ${tls.en}. Account: ${auth.en}.`,
+                  fr: `Certificat : ${tls.fr}. Compte : ${auth.fr}.`,
+                };
+              })(),
         );
+        if (managedMode) {
+          parts.push(describeStorage(await client.getStats().catch(() => null)));
+        }
       } catch (err) {
         parts.push(describeError(err));
       }
@@ -612,6 +916,112 @@ export function createFrigateSession({
       return sentences(parts);
     },
 
+    /** "Start Frigate": generate config.yml, then start the sub-container. */
+    async startFrigate() {
+      const refused = managedGuard();
+      if (refused) return refused;
+      let result;
+      try {
+        result = await managed.start(config, raw);
+      } catch (err) {
+        logger.warn(`Could not start Frigate: ${err.message}`);
+        return describeManagedError(err);
+      }
+      restartWatch();
+      return sentences([
+        {
+          en: 'Frigate is starting: the connection status says when it answers (the first start can take a few minutes).',
+          fr: 'Frigate démarre : le statut de connexion indique quand il répond (le premier démarrage peut prendre quelques minutes).',
+        },
+        ...describeDetector(result.decision, result),
+        describeRetention(result.retention),
+      ]);
+    },
+
+    /** "Stop Frigate": the supervisor will not restart it. */
+    async stopFrigate() {
+      const refused = managedGuard();
+      if (refused) return refused;
+      try {
+        await managed.stop();
+      } catch (err) {
+        logger.warn(`Could not stop Frigate: ${err.message}`);
+        return describeManagedError(err);
+      }
+      newPhase();
+      await markDown();
+      await setStatus(false, MANAGED_TEXT.STOPPED);
+      return {
+        en: 'Frigate stopped. Its recordings and configuration are kept.',
+        fr: 'Frigate arrêté. Ses enregistrements et sa configuration sont conservés.',
+      };
+    },
+
+    /** "Restart Frigate": regenerate config.yml, then restart the sub-container. */
+    async restartFrigate() {
+      const refused = managedGuard();
+      if (refused) return refused;
+      let result;
+      try {
+        result = await managed.restart(config, raw);
+      } catch (err) {
+        logger.warn(`Could not restart Frigate: ${err.message}`);
+        return describeManagedError(err);
+      }
+      await markDown();
+      restartWatch();
+      return sentences([
+        {
+          en: `Frigate is restarting${result.changed ? ' with its updated configuration' : ''}: the connection status says when it answers.`,
+          fr: `Frigate redémarre${result.changed ? ' avec sa configuration mise à jour' : ''} : le statut de connexion indique quand il répond.`,
+        },
+        ...describeDetector(result.decision, result),
+      ]);
+    },
+
+    /** "Show the Frigate credentials": the UI address and the admin login. */
+    async showCredentials() {
+      const refused = managedGuard();
+      if (refused) return refused;
+      let entry = container;
+      try {
+        entry = await managed.container();
+        container = entry;
+      } catch {
+        // The last known state is enough for the address.
+      }
+      return managed.credentials(entry);
+    },
+
+    /**
+     * The user changed the hardware grants (Gladys recreated the
+     * sub-container): new detector, restart if it runs.
+     */
+    async hardwareUpdated(containers) {
+      if (!isManaged(config) || !managed || !client) {
+        return;
+      }
+      try {
+        const result = await managed.hardwareUpdated(config, raw, containers);
+        logger.info(
+          `Hardware grants changed: detector ${result.decision.kind}${result.restarted ? ', Frigate restarted' : ''}`,
+        );
+        if (result.restarted) {
+          await markDown();
+        }
+      } catch (err) {
+        logger.warn(`Could not apply the new hardware grants: ${err.message}`);
+        await setStatus(false, composeMessage([describeManagedError(err)]));
+        return;
+      }
+      restartWatch();
+    },
+
+    /** The last `frigate` entry of GET /container (managed mode), else null. */
+    get container() {
+      return container;
+    },
+
     /** The configuration applied last (null before the first one). */
     get config() {
       return config;
@@ -625,6 +1035,7 @@ export function createFrigateSession({
     async close() {
       generation += 1;
       clearTimeout(retryTimer);
+      clearTimeout(watchTimer);
       await stopFeed();
       await client?.close();
       client = null;

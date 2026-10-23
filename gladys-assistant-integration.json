@@ -12,17 +12,86 @@
   "cover_image": "https://raw.githubusercontent.com/Terdious/gladys-frigate/main/cover.png",
   "categories": ["security"],
   "transports": ["local"],
+  "containers": [
+    {
+      "name": "frigate",
+      "docker_image": "ghcr.io/blakeblackshear/frigate:0.18.0",
+      "start": "manual",
+      "volumes": ["/config", "/media/frigate", "/tmp/cache"],
+      "read_only": false,
+      "memory_mb": 4096,
+      "cpu": 2,
+      "shm_mb": 512,
+      "ports": [
+        {
+          "container_port": 8971,
+          "name": "frigate_ui",
+          "label": {
+            "en": "Frigate UI",
+            "fr": "Interface Frigate"
+          }
+        },
+        {
+          "container_port": 8554,
+          "name": "frigate_rtsp",
+          "browsable": false,
+          "label": {
+            "en": "RTSP restream (go2rtc)",
+            "fr": "Flux RTSP (go2rtc)"
+          }
+        }
+      ],
+      "devices": ["coral-usb", "coral-pcie", "gpu"]
+    }
+  ],
   "config_schema": [
+    {
+      "key": "deployment_section",
+      "type": "section",
+      "label": {
+        "en": "Deployment",
+        "fr": "Déploiement"
+      },
+      "description": {
+        "en": "Connect an existing Frigate instance (remote, the usual choice on a Raspberry Pi or a NAS), or let Gladys install and run Frigate in its own container (managed, for a machine fit for video analysis). Save, then follow the section of the chosen mode.",
+        "fr": "Connectez une instance Frigate existante (distante, le choix habituel sur un Raspberry Pi ou un NAS), ou laissez Gladys installer et faire tourner Frigate dans son propre conteneur (géré, pour une machine adaptée à l'analyse vidéo). Enregistrez, puis suivez la section du mode choisi."
+      }
+    },
+    {
+      "key": "mode",
+      "type": "select",
+      "label": {
+        "en": "Frigate deployment",
+        "fr": "Déploiement de Frigate"
+      },
+      "options": [
+        {
+          "value": "remote",
+          "label": {
+            "en": "Existing Frigate instance (remote)",
+            "fr": "Instance Frigate existante (distante)"
+          }
+        },
+        {
+          "value": "managed",
+          "label": {
+            "en": "Frigate installed by Gladys (managed)",
+            "fr": "Frigate installé par Gladys (géré)"
+          }
+        }
+      ],
+      "default": "remote"
+    },
     {
       "key": "frigate_section",
       "type": "section",
       "label": {
-        "en": "Frigate server",
-        "fr": "Serveur Frigate"
+        "en": "Existing Frigate server (remote mode)",
+        "fr": "Serveur Frigate existant (mode distant)"
       },
       "description": {
-        "en": "Frigate 0.16 or later. Use the authenticated port (https://<ip>:8971) with a dedicated Frigate account; the viewer role is enough, camera commands go through MQTT. Frigate's self-signed certificate is trusted on first connection, then pinned. Port 5000 has no authentication at all.",
-        "fr": "Frigate 0.16 ou plus. Utilisez le port authentifié (https://<ip>:8971) avec un compte Frigate dédié ; le rôle viewer suffit, les commandes des caméras passent par MQTT. Le certificat auto-signé de Frigate est approuvé à la première connexion, puis épinglé. Le port 5000 n'a aucune authentification."
+        "en": "Remote mode only. Frigate 0.16 or later. Use the authenticated port (https://<ip>:8971) with a dedicated Frigate account; the viewer role is enough, camera commands go through MQTT. Frigate's self-signed certificate is trusted on first connection, then pinned. Port 5000 has no authentication at all.",
+        "fr": "Mode distant uniquement. Frigate 0.16 ou plus. Utilisez le port authentifié (https://<ip>:8971) avec un compte Frigate dédié ; le rôle viewer suffit, les commandes des caméras passent par MQTT. Le certificat auto-signé de Frigate est approuvé à la première connexion, puis épinglé. Le port 5000 n'a aucune authentification."
       },
       "links": [
         {
@@ -45,7 +114,10 @@
         "en": "https://192.168.1.10:8971",
         "fr": "https://192.168.1.10:8971"
       },
-      "required": true
+      "description": {
+        "en": "Required in remote mode; ignored in managed mode.",
+        "fr": "Obligatoire en mode distant ; ignorée en mode géré."
+      }
     },
     {
       "key": "username",
@@ -64,6 +136,150 @@
       }
     },
     {
+      "key": "managed_section",
+      "type": "section",
+      "label": {
+        "en": "Frigate installed by Gladys (managed mode)",
+        "fr": "Frigate installé par Gladys (mode géré)"
+      },
+      "description": {
+        "en": "Managed mode only. Press \"Start Frigate\" below: Gladys generates the Frigate configuration and starts its container. Then add your cameras in the Frigate UI at https://{{gladys_host}}:{{port:frigate_ui}} (self-signed certificate; the login is given by \"Show the Frigate credentials\"). Grant the Coral or the GPU in the Hardware block of the integration. Recordings are kept the number of days below (0 = none); empty a field to keep the value set in the Frigate UI. The go2rtc restream listens on port {{port:frigate_rtsp}}.",
+        "fr": "Mode géré uniquement. Cliquez sur « Démarrer Frigate » ci-dessous : Gladys génère la configuration de Frigate et démarre son conteneur. Ajoutez ensuite vos caméras dans l'interface Frigate sur https://{{gladys_host}}:{{port:frigate_ui}} (certificat auto-signé ; l'identifiant est donné par « Afficher les identifiants Frigate »). Autorisez le Coral ou le GPU dans le bloc Matériel de l'intégration. Les enregistrements sont conservés le nombre de jours ci-dessous (0 = aucun) ; videz un champ pour garder la valeur réglée dans l'interface Frigate. Le restream go2rtc écoute sur le port {{port:frigate_rtsp}}."
+      },
+      "links": [
+        {
+          "url": "https://docs.frigate.video/configuration/object_detectors",
+          "label": {
+            "en": "Frigate object detectors",
+            "fr": "Détecteurs d'objets de Frigate"
+          }
+        }
+      ]
+    },
+    {
+      "key": "detector",
+      "type": "select",
+      "label": {
+        "en": "Object detector",
+        "fr": "Détecteur d'objets"
+      },
+      "description": {
+        "en": "A choice whose hardware is not granted or not detected falls back to the automatic choice.",
+        "fr": "Un choix dont le matériel n'est pas autorisé ou pas détecté revient au choix automatique."
+      },
+      "options": [
+        {
+          "value": "auto",
+          "label": {
+            "en": "Automatic (Coral, then Intel GPU, then CPU)",
+            "fr": "Automatique (Coral, puis GPU Intel, puis CPU)"
+          }
+        },
+        {
+          "value": "coral",
+          "label": {
+            "en": "Google Coral (USB or PCIe)",
+            "fr": "Google Coral (USB ou PCIe)"
+          }
+        },
+        {
+          "value": "openvino",
+          "label": {
+            "en": "Intel GPU (OpenVINO)",
+            "fr": "GPU Intel (OpenVINO)"
+          }
+        },
+        {
+          "value": "cpu",
+          "label": {
+            "en": "CPU (slow)",
+            "fr": "CPU (lent)"
+          }
+        }
+      ],
+      "default": "auto"
+    },
+    {
+      "key": "gpu_vendor",
+      "type": "select",
+      "label": {
+        "en": "GPU vendor",
+        "fr": "Fabricant du GPU"
+      },
+      "description": {
+        "en": "Gladys cannot read it from its container. Intel: OpenVINO detection and VAAPI video decoding; AMD: VAAPI decoding only; none: the GPU is not used.",
+        "fr": "Gladys ne peut pas le lire depuis son conteneur. Intel : détection OpenVINO et décodage vidéo VAAPI ; AMD : décodage VAAPI seulement ; aucun : le GPU n'est pas utilisé."
+      },
+      "options": [
+        {
+          "value": "intel",
+          "label": {
+            "en": "Intel",
+            "fr": "Intel"
+          }
+        },
+        {
+          "value": "amd",
+          "label": {
+            "en": "AMD",
+            "fr": "AMD"
+          }
+        },
+        {
+          "value": "none",
+          "label": {
+            "en": "None (no GPU)",
+            "fr": "Aucun (pas de GPU)"
+          }
+        }
+      ],
+      "default": "intel"
+    },
+    {
+      "key": "record_continuous_days",
+      "type": "number",
+      "label": {
+        "en": "Continuous recording (days)",
+        "fr": "Enregistrement continu (jours)"
+      },
+      "default": 2,
+      "min": 0,
+      "max": 3650
+    },
+    {
+      "key": "record_alerts_days",
+      "type": "number",
+      "label": {
+        "en": "Alert recordings (days)",
+        "fr": "Enregistrements des alertes (jours)"
+      },
+      "default": 7,
+      "min": 0,
+      "max": 3650
+    },
+    {
+      "key": "record_detections_days",
+      "type": "number",
+      "label": {
+        "en": "Detection recordings (days)",
+        "fr": "Enregistrements des détections (jours)"
+      },
+      "default": 7,
+      "min": 0,
+      "max": 3650
+    },
+    {
+      "key": "snapshots_retain_days",
+      "type": "number",
+      "label": {
+        "en": "Snapshots (days)",
+        "fr": "Captures (jours)"
+      },
+      "default": 14,
+      "min": 0,
+      "max": 3650
+    },
+    {
       "key": "mqtt_section",
       "type": "section",
       "label": {
@@ -71,8 +287,8 @@
         "fr": "Flux temps réel"
       },
       "description": {
-        "en": "Enter the MQTT broker Frigate publishes to (recommended). Leave the host empty to use the Frigate WebSocket instead, without a broker. The broker account needs read access to <prefix>/# and write access to <prefix>/+/+/set.",
-        "fr": "Renseignez le broker MQTT sur lequel Frigate publie (recommandé). Laissez l'hôte vide pour utiliser le WebSocket de Frigate, sans broker. Le compte du broker doit pouvoir lire <préfixe>/# et écrire sur <préfixe>/+/+/set."
+        "en": "Enter the MQTT broker Frigate publishes to (recommended). Leave the host empty to use the Frigate WebSocket instead, without a broker. The broker account needs read access to <prefix>/# and write access to <prefix>/+/+/set. In managed mode, Frigate is configured to publish to this same broker with this same account (host empty: no broker, the WebSocket is used).",
+        "fr": "Renseignez le broker MQTT sur lequel Frigate publie (recommandé). Laissez l'hôte vide pour utiliser le WebSocket de Frigate, sans broker. Le compte du broker doit pouvoir lire <préfixe>/# et écrire sur <préfixe>/+/+/set. En mode géré, Frigate est configuré pour publier sur ce même broker avec ce même compte (hôte vide : pas de broker, le WebSocket est utilisé)."
       },
       "links": [
         {
@@ -286,6 +502,54 @@
       "label": {
         "en": "Trust the new certificate",
         "fr": "Faire confiance au nouveau certificat"
+      },
+      "timeout_seconds": 30
+    },
+    {
+      "key": "start_frigate",
+      "label": {
+        "en": "Start Frigate",
+        "fr": "Démarrer Frigate"
+      },
+      "description": {
+        "en": "Managed mode: generates the Frigate configuration, then starts its container.",
+        "fr": "Mode géré : génère la configuration de Frigate, puis démarre son conteneur."
+      },
+      "timeout_seconds": 60
+    },
+    {
+      "key": "stop_frigate",
+      "label": {
+        "en": "Stop Frigate",
+        "fr": "Arrêter Frigate"
+      },
+      "description": {
+        "en": "Managed mode: stops the Frigate container (Gladys does not restart it).",
+        "fr": "Mode géré : arrête le conteneur Frigate (Gladys ne le relance pas)."
+      },
+      "timeout_seconds": 60
+    },
+    {
+      "key": "restart_frigate",
+      "label": {
+        "en": "Restart Frigate",
+        "fr": "Redémarrer Frigate"
+      },
+      "description": {
+        "en": "Managed mode: regenerates the Frigate configuration, then restarts its container.",
+        "fr": "Mode géré : régénère la configuration de Frigate, puis redémarre son conteneur."
+      },
+      "timeout_seconds": 60
+    },
+    {
+      "key": "show_credentials",
+      "label": {
+        "en": "Show the Frigate credentials",
+        "fr": "Afficher les identifiants Frigate"
+      },
+      "description": {
+        "en": "Managed mode: the Frigate UI address and its admin account, shown to you only.",
+        "fr": "Mode géré : l'adresse de l'interface Frigate et son compte admin, affichés pour vous seul."
       },
       "timeout_seconds": 30
     }

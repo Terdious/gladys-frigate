@@ -8,13 +8,36 @@ import { WebSocketServer } from 'ws';
  * @param {object} options
  * @param {object} options.config the integration configuration
  * @param {object[]} [options.devices] devices created by the user
+ * @param {object[]} [options.containers] the sub-containers (GET /container),
+ *   e.g. `{ name, status, desired, started_at, ports, devices }`
  */
-export async function startFakeGladys({ config, devices = [] }) {
+export async function startFakeGladys({ config, devices = [], containers = [] }) {
   const received = []; // { method, path, body }
   const results = new Map(); // message_id -> command-result payload
   let socket = null;
   let nextId = 1;
-  const state = { devices };
+  const state = { devices, containers: structuredClone(containers) };
+  let nextHostPort = 42100;
+  let starts = 0;
+
+  /** POST /container/:name/{start,stop,restart}, as the supervisor does it. */
+  function control(name, verb) {
+    const entry = state.containers.find((c) => c.name === name);
+    if (!entry) return false;
+    if (verb === 'stop') {
+      Object.assign(entry, { status: 'stopped', desired: 'stopped', started_at: null });
+    } else {
+      starts += 1;
+      Object.assign(entry, {
+        status: 'running',
+        desired: 'running',
+        started_at: new Date(Date.UTC(2026, 0, 1, 0, 0, starts)).toISOString(),
+      });
+      // Host ports are assigned at the first start, then kept.
+      for (const port of entry.ports ?? []) port.host_port ??= nextHostPort++;
+    }
+    return true;
+  }
 
   const server = http.createServer((req, res) => {
     let body = '';
@@ -30,6 +53,16 @@ export async function startFakeGladys({ config, devices = [] }) {
         res.end(JSON.stringify(state.devices));
       } else if (req.method === 'GET' && path === '/config') {
         res.end(JSON.stringify({ config }));
+      } else if (req.method === 'GET' && path === '/container') {
+        res.end(JSON.stringify({ containers: state.containers }));
+      } else if (req.method === 'POST' && /^\/container\/[^/]+\/(start|stop|restart)$/.test(path)) {
+        const [, , name, verb] = path.split('/');
+        if (control(decodeURIComponent(name), verb)) {
+          res.end('{"success":true}');
+        } else {
+          res.statusCode = 404;
+          res.end('{"error":"NOT_FOUND"}');
+        }
       } else {
         res.end('{"success":true}');
       }
@@ -56,6 +89,17 @@ export async function startFakeGladys({ config, devices = [] }) {
     posts: (path) => received.filter((r) => r.method === 'POST' && r.path === path),
     set devices(list) {
       state.devices = list;
+    },
+    /** The sub-containers as Gladys reports them (mutable by the test). */
+    get containers() {
+      return state.containers;
+    },
+    /** Change the state of a sub-container (a crash, a hardware grant…). */
+    setContainer(name, patch) {
+      Object.assign(
+        state.containers.find((c) => c.name === name),
+        patch,
+      );
     },
     /** An event without answer (scan request, device created…). */
     send(type, payload = {}) {
