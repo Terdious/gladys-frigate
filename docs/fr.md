@@ -72,14 +72,44 @@ régénère la configuration et redémarre Frigate.
 - La détection sur CPU seul fonctionne, lentement et en consommant beaucoup :
   le statut le signale.
 
+#### Quelle carte graphique ai-je ?
+
+Le GPU qui compte est celui de la **machine qui fait tourner Gladys** (Docker
+ne partage `/dev/dri` que sous Linux ; Gladys sur Docker Desktop pour Windows
+ou macOS n'a aucun GPU à accorder : choisissez **Aucun**).
+
+- **Linux, ligne de commande** (SSH sur la machine Gladys) :
+  `lspci | grep -i -E "vga|display"` nomme la puce (« Intel … UHD Graphics »,
+  « AMD … Radeon », « NVIDIA … »). `ls /dev/dri` doit lister un `renderD128`
+  (sinon aucun GPU ne peut être accordé) ;
+  `cat /sys/class/drm/renderD128/device/vendor` donne l'identifiant du
+  fabricant : `0x8086` Intel, `0x1002` AMD, `0x10de` NVIDIA.
+- **Linux, bureau** : Paramètres → À propos (GNOME, ligne « Graphismes ») ou
+  Configuration du système → À propos de ce système (KDE), ou les outils
+  `hardinfo` / `inxi -G`.
+- **Windows** (pour connaître la machine avant d'y installer Linux) :
+  Gestionnaire des tâches → Performance → GPU, ou `dxdiag` → onglet Affichage.
+- **macOS** : menu Pomme → À propos de ce Mac → Carte graphique (les GPU Apple
+  Silicon et AMD des Mac ne sont de toute façon pas utilisables par Frigate
+  dans un conteneur).
+
+Un Intel de 6e génération (Skylake) ou plus récent avec iGPU est le cas idéal
+du mode géré : détection OpenVINO et décodage VAAPI, pas besoin de Coral pour
+quelques caméras. Un GPU **NVIDIA** n'est pas utilisable en mode géré (le core
+n'expose que `/dev/dri`, pas le runtime NVIDIA) : choisissez **Aucun**, ou un
+Coral.
+
 ### Démarrer, arrêter, redémarrer
 
-1. Choisissez le mode géré, enregistrez. Le statut indique « pas encore
-   démarré ».
-2. Cliquez sur **Démarrer Frigate** : l'intégration écrit la configuration de
+1. Choisissez le mode géré et enregistrez : le premier enregistrement
+   démarre Frigate de lui-même. L'intégration écrit la configuration de
    Frigate, puis demande à Gladys de démarrer le conteneur. Le statut suit :
    « démarre… », puis « Connecté à Frigate 0.18.0 (installé par Gladys) ». Le
-   premier démarrage peut prendre quelques minutes.
+   premier démarrage peut prendre quelques minutes (davantage si Gladys
+   télécharge l'image Frigate à ce moment-là).
+2. **Démarrer Frigate**, **Arrêter Frigate** et **Redémarrer Frigate** le
+   pilotent ensuite : un Frigate que vous avez arrêté reste arrêté jusqu'à
+   un clic sur Démarrer, quoi que vous enregistriez.
 3. Cliquez sur **Afficher les identifiants Frigate** : l'adresse de
    l'interface Frigate, `https://<adresse de Gladys>:<port>` (le port
    attribué par Gladys, aussi le lien « Interface Frigate » du bloc de
@@ -588,7 +618,7 @@ passe ni de jeton.
 | Symptôme                                                | À vérifier                                                                                                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | « Frigate ne reste pas démarré » (mode géré)            | Les limites du bac à sable de Gladys (100 processus, `/tmp` de 64 Mo, aucune capability) : voir « Frigate ne reste pas démarré ». Le mode distant les contourne.   |
-| « pas encore démarré » (mode géré)                      | Cliquez sur **Démarrer Frigate** ; Frigate ne démarre jamais seul la première fois.                                                                                |
+| « pas encore démarré » (mode géré)                      | Enregistrez la configuration (le premier enregistrement démarre Frigate) ou cliquez sur **Démarrer Frigate**.                                                      |
 | Le statut géré indique « aucun sous-conteneur Frigate » | Mettez à jour Gladys et l'intégration (les sous-conteneurs demandent Gladys 5.1 ou plus), ou choisissez le mode distant.                                           |
 | « Le certificat de … a changé »                         | Frigate réinstallé ou certificat régénéré : cliquez sur **Faire confiance au nouveau certificat**. Sinon, quelqu'un se fait peut-être passer pour Frigate.         |
 | « Frigate a refusé l'utilisateur ou le mot de passe »   | Le compte de l'onglet Configuration. Après plusieurs échecs, Frigate bloque les connexions un moment : l'intégration ne réessaie pas d'elle-même.                  |

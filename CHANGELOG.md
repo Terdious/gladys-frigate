@@ -25,6 +25,21 @@ All notable changes to this project are documented here. The format follows
   added there are never touched. Test the connection gives the number of
   cameras added from Gladys.
 
+## [0.4.1] - 2026-10-23
+
+### Added
+
+- Links to the French and English documentation in the Deployment section
+  of the Configuration form (the fork is not in the store, which otherwise
+  hosts the documentation), and a "Which GPU do I have?" help (Linux command
+  line and desktop, Windows, macOS) for the GPU vendor option.
+
+### Changed
+
+- Managed mode: saving the configuration with the managed mode chosen starts
+  Frigate the first time (no second button to press); a Frigate stopped with
+  **Stop Frigate** stays stopped whatever is saved afterwards.
+
 ## [0.4.0] - 2026-10-23
 
 ### Added
@@ -262,6 +277,7 @@ All notable changes to this project are documented here. The format follows
 - CI runs with a read-only `GITHUB_TOKEN`; the test-only TLS material stays
   out of the Docker build context.
 
-[Unreleased]: https://github.com/Terdious/gladys-frigate/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Terdious/gladys-frigate/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Terdious/gladys-frigate/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Terdious/gladys-frigate/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/LM1LC3N7/gladys-frigate/compare/v0.3.2...v0.3.3

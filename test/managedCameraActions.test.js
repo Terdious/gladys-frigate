@@ -133,7 +133,9 @@ test('add: a name already used, here or in the Frigate UI, is refused', async (t
 
 test('add while Frigate is stopped: written, applied at the next start', async (t) => {
   const { session, apply, gladys, configPath } = await setup(t);
-  await apply();
+  await apply(); // the first save starts Frigate: stop it on purpose
+  await session.stopFrigate();
+  const calls = gladys.calls.filter(([verb]) => verb === 'restart' || verb === 'start').length;
   const answer = await session.cameras({
     operation: 'add',
     label: 'Garden',
@@ -145,7 +147,11 @@ test('add while Frigate is stopped: written, applied at the next start', async (
   assert.match(answer.en, /PERMANENTLY POWERED/, 'battery warning');
   assert.match(answer.fr, /ALIMENTÉE EN PERMANENCE/);
   assert.match(answer.en, /Stream: tapo:\/\/\*\*\*@192\.168\.1\.30\?channel=0&subtype=1\./);
-  assert.ok(!gladys.calls.some(([verb]) => verb === 'restart' || verb === 'start'));
+  assert.equal(
+    gladys.calls.filter(([verb]) => verb === 'restart' || verb === 'start').length,
+    calls,
+    'a stopped Frigate stays stopped',
+  );
   const file = await config(configPath);
   assert.deepEqual(file.cameras.garden.detect, { enabled: true, fps: 5, width: 640, height: 360 });
 

@@ -66,13 +66,40 @@ preset-vaapi`); AMD: VAAPI decoding only, detection on CPU; None: the GPU
 - CPU detection only works, slowly and CPU hungry: the status warns about
   it.
 
+#### Which GPU do I have?
+
+The GPU that matters is the one of the **machine running Gladys** (Docker
+only shares `/dev/dri` on Linux; Gladys on Docker Desktop for Windows or
+macOS has no GPU to grant: choose **None**).
+
+- **Linux, command line** (SSH on the Gladys machine):
+  `lspci | grep -i -E "vga|display"` names the chip ("Intel … UHD Graphics",
+  "AMD … Radeon", "NVIDIA …"). `ls /dev/dri` must list a `renderD128` (else
+  no GPU can be granted); `cat /sys/class/drm/renderD128/device/vendor` gives
+  the vendor id: `0x8086` Intel, `0x1002` AMD, `0x10de` NVIDIA.
+- **Linux, desktop**: Settings → About (GNOME, "Graphics") or System Settings
+  → About this System (KDE), or the `hardinfo` / `inxi -G` tools.
+- **Windows** (to know the hardware before installing Linux on it): Task
+  Manager → Performance → GPU, or `dxdiag` → Display tab.
+- **macOS**: Apple menu → About This Mac → Graphics (Apple Silicon and AMD
+  GPUs of Macs are not usable by Frigate in a container anyway).
+
+Intel 6th generation (Skylake) or later with an iGPU is the sweet spot for
+the managed mode: OpenVINO detection and VAAPI decoding, no Coral needed for a
+few cameras. An **NVIDIA** GPU is not usable in the managed mode (the core
+exposes `/dev/dri` only, not the NVIDIA runtime): choose **None**, or a Coral.
+
 ### Start, stop, restart
 
-1. Choose the managed mode, save. The status says "not started yet".
-2. Press **Start Frigate**: the integration writes the Frigate configuration,
-   then asks Gladys to start the container. The status follows: "starting…",
-   then "Connected to Frigate 0.18.0 (installed by Gladys)". The first start
-   can take a few minutes.
+1. Choose the managed mode and save: the first save starts Frigate by
+   itself. The integration writes the Frigate configuration, then asks
+   Gladys to start the container. The status follows: "starting…", then
+   "Connected to Frigate 0.18.0 (installed by Gladys)". The first start can
+   take a few minutes (on a Gladys that downloads the Frigate image at that
+   moment, longer).
+2. **Start Frigate**, **Stop Frigate** and **Restart Frigate** drive it
+   afterwards: a Frigate you stopped stays stopped until you press Start,
+   whatever you save.
 3. Press **Show the Frigate credentials**: the address of the Frigate UI,
    `https://<address of Gladys>:<port>` (the port Gladys assigned, also the
    "Frigate UI" link of the supervision block and of the managed section),
@@ -546,7 +573,7 @@ The connection status at the top of the Configuration tab says what is wrong;
 | Symptom                                             | What to check                                                                                                                                     |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "Frigate does not stay up" (managed mode)           | The Gladys sandbox limits (100 processes, 64 MB `/tmp`, no capabilities): see "When Frigate does not stay up". Remote mode works around them.     |
-| "not started yet" (managed mode)                    | Press **Start Frigate**; Frigate never starts by itself the first time.                                                                           |
+| "not started yet" (managed mode)                    | Save the configuration (the first save starts Frigate) or press **Start Frigate**.                                                                |
 | The managed status says "no Frigate sub-container"  | Update Gladys and the integration (sub-containers need Gladys 5.1 or later), or choose the remote mode.                                           |
 | "The certificate of … changed"                      | Frigate reinstalled or certificate regenerated: press **Trust the new certificate**. Otherwise, someone may be impersonating Frigate.             |
 | "Frigate refused the username or the password"      | The account of the Configuration tab. After several failures Frigate blocks logins for a while: the integration does not retry by itself.         |
