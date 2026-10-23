@@ -23,7 +23,7 @@ test('the manifest requires Gladys 5.1+ (scene triggers and actions)', () => {
 
 test('the manifest version and image tag follow package.json', () => {
   assert.equal(manifest.version, pkg.version);
-  assert.equal(manifest.docker_image, `ghcr.io/lm1lc3n7/gladys-frigate:${pkg.version}`);
+  assert.equal(manifest.docker_image, `ghcr.io/terdious/gladys-frigate:${pkg.version}`);
 });
 
 test('every config field is known to the code, with the same default', () => {

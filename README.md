@@ -1,5 +1,12 @@
 # Frigate integration for Gladys Assistant
 
+> **Fork** of [LM1LC3N7/gladys-frigate](https://github.com/LM1LC3N7/gladys-frigate)
+> adding a **managed mode**: Frigate installed and driven by Gladys as a
+> sub-container, cameras added from Gladys (model catalog), hardware
+> acceleration, live view, PTZ and diagnostics. The connector to an existing
+> Frigate (remote mode) is unchanged. Plan and status: [`ROADMAP.md`](./ROADMAP.md)
+> and [issue #1](https://github.com/Terdious/gladys-frigate/issues/1).
+
 External integration that brings [Frigate NVR](https://frigate.video) cameras
 into [Gladys Assistant](https://gladysassistant.com). Goal: more reliable and
 safer than the Home Assistant integration, built on the official Gladys
@@ -17,7 +24,8 @@ integration SDK.
 User documentation: [`docs/en.md`](./docs/en.md) / [`docs/fr.md`](./docs/fr.md)
 (re-hosted by the Gladys store, linked from the Configuration screen).
 
-Decisions taken and what is left: [`TODO.md`](./TODO.md).
+Roadmap of the fork: [`ROADMAP.md`](./ROADMAP.md). Upstream decisions and
+handoff notes (historical): [`TODO.md`](./TODO.md).
 
 ## v1 scope
 

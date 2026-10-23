@@ -1,4 +1,9 @@
-# TODO — Frigate integration v1
+# TODO — Frigate integration v1 (upstream handoff, historical)
+
+> This file is the handoff document of the upstream connector (v1, remote
+> instance). The fork's plan — managed mode, camera management, live view,
+> PTZ, diagnostics — lives in [`ROADMAP.md`](./ROADMAP.md) and the GitHub
+> issues. The decisions below still hold unless an issue says otherwise.
 
 Handoff document: what is done, what was decided, what comes next. Keep it
 up to date at the end of every milestone (tick the boxes, move decisions in).
