@@ -100,3 +100,23 @@ export class AdminBootstrapError extends FrigateError {
     this.status = status;
   }
 }
+
+/**
+ * A managed camera cannot be turned into a go2rtc source. `code`:
+ * 'unknown_model' | 'missing_host' | 'missing_password' |
+ * 'missing_custom_source'. Never carries a credential.
+ */
+export class CameraSourceError extends FrigateError {
+  constructor(code, camera) {
+    super(`Camera ${camera ?? '?'}: no go2rtc source (${code})`);
+    this.code = code;
+    this.camera = camera ?? null;
+  }
+}
+
+/** /data/managed/cameras.json is not readable JSON: never overwritten blindly. */
+export class CamerasStoreError extends FrigateError {
+  constructor(options) {
+    super('The managed cameras file (managed/cameras.json) is not valid JSON', options);
+  }
+}

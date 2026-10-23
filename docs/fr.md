@@ -116,16 +116,91 @@ Coral.
    supervision et de la section mode géré), et le compte `admin` créé par
    l'intégration. Le certificat est auto-signé : acceptez-le dans votre
    navigateur. La réponse n'est affichée que pour vous.
-4. Dans l'interface Frigate, ajoutez vos caméras (son éditeur de
-   configuration), puis **Rafraîchir les caméras** et ajoutez-les depuis
-   l'onglet Découverte, comme en mode distant. La gestion des caméras depuis
-   Gladys arrive dans une version suivante.
+4. Ajoutez vos caméras avec le bouton **Caméras** (voir « Ajouter des
+   caméras » ci-dessous), ou dans l'interface Frigate ; puis **Ajouter à
+   Gladys** dans l'onglet Découverte, comme en mode distant.
 
 **Arrêter Frigate** arrête le conteneur (Gladys ne le relance pas) ;
 **Redémarrer Frigate** régénère la configuration et le redémarre.
 Enregistrer la configuration de l'intégration applique aussitôt les réglages
 du mode géré : un Frigate démarré ne redémarre que si sa configuration
 change vraiment.
+
+### Ajouter des caméras (mode géré)
+
+Le bouton **Caméras** gère les caméras d'un Frigate installé par Gladys, sans
+écrire de YAML. Choisissez son **opération**, remplissez les champs qu'elle
+utilise (les autres sont ignorés), puis lancez-le :
+
+- **Ajouter une caméra** : un nom, un modèle du catalogue ci-dessous (RTSP
+  générique si vide), l'adresse IP et le compte de la caméra. Facultatif :
+  les objets à détecter (`person` si vide, étiquettes Frigate séparées par
+  des virgules : `person, car, dog, cat, horse, bird, bicycle, motorcycle,
+bus, truck`…) et les images par seconde de détection (5 si vide, de 1 à
+  15).
+- **Modifier une caméra** : choisissez-la dans la liste **Caméra** (ou
+  saisissez son nom Frigate si elle n'est pas encore créée dans Gladys). Un
+  champ vide garde sa valeur ; les objets et les images par seconde
+  remplacent ceux enregistrés quand ils sont remplis.
+- **Supprimer une caméra** : la retire de Frigate. Ses enregistrements déjà
+  faits restent dans le dossier média de Frigate ; l'appareil Gladys reste
+  aussi (supprimez-le depuis sa page si vous n'en avez plus besoin).
+- **Lister les caméras** (l'opération par défaut) : les caméras ajoutées
+  depuis Gladys (modèle, adresse, objets, images par seconde — jamais un mot
+  de passe) et celles ajoutées dans l'interface Frigate.
+
+Après chaque modification, l'intégration écrit la configuration de Frigate et
+redémarre Frigate s'il tourne (environ 30 secondes ; le statut de connexion
+suit). Ouvrez ensuite l'onglet **Découverte**, cliquez sur **Scanner**, puis
+**Ajouter à Gladys**. La réponse du bouton donne la note du modèle (ce qu'il
+faut faire côté caméra) et ces étapes.
+
+Le **nom Frigate** d'une caméra est tiré de son nom une fois pour toutes
+(« Entrée nord » → `entree_nord`) : il identifie l'appareil Gladys pour
+toujours. Modifier le nom ensuite ne change que le nom affiché par Frigate.
+
+| Marque       | Modèles                                                                           | Quoi saisir                                                                                               | Note                                                                                                                                                                              |
+| ------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TP-Link Tapo | filaires : C100, C110, C120, C200, C210, C225, C310, C320WS, C325WB, C500, C520WS | IP, le **compte caméra** de l'app Tapo (réglages de la caméra → Paramètres avancés → Compte de la caméra) | Pas votre compte cloud TP-Link. Flux `stream1` / `stream2`, ONVIF (PTZ) sur le port 2020.                                                                                         |
+| TP-Link Tapo | batterie/solaire : C400, C420, C425, C460, C610, C645D, C660, D230                | IP, le mot de passe de votre compte **cloud TP-Link** (pas d'utilisateur)                                 | Pas de RTSP : `tapo://` de go2rtc, flux léger 640×360. « 401 Unauthorized » dans les logs Frigate : modifiez la caméra avec la variante d'authentification **SHA256**.            |
+| Reolink      | RLC, E1, Duo (RTSP)                                                               | IP, le compte de la caméra                                                                                | Chemins `h264Preview_01_main` / `h264Preview_01_sub`, ONVIF sur le port 8000. Activez RTSP / ONVIF dans l'app Reolink s'ils sont désactivés.                                      |
+| Reolink      | Argus et autres caméras sur batterie (Home Hub)                                   | IP **du Home Hub**, son compte                                                                            | Canal 1 par défaut (`Preview_01_main` / `Preview_01_sub`) : pour la 2e caméra du hub, indiquez les chemins `Preview_02_main` / `Preview_02_sub`.                                  |
+| D-Link       | DCS-5020L                                                                         | IP, un compte utilisateur de la caméra                                                                    | Pas de RTSP : flux MJPEG (`video.cgi`, port 80) réencodé en H264. Pan/tilt et mode nuit (version ultérieure) : le compte **admin** comme compte de contrôle.                      |
+| D-Link       | DCS-8302LH, DCS-8635LH (mydlink)                                                  | IP, utilisateur `admin`, mot de passe = **code PIN** de la caméra                                         | Activez l'**Accès local** dans l'app mydlink, puis débranchez la caméra quelques secondes. PIN complet refusé : essayez ses 6 derniers chiffres. DCS-8635LH : un seul flux 1080p. |
+| Toutes       | Caméra RTSP (générique)                                                           | IP, compte, le **chemin** du flux principal (et d'un flux léger)                                          | Par exemple `stream1`, `live/ch0`, `cam/realmonitor?channel=1&subtype=0`.                                                                                                         |
+| Toutes       | Caméra ONVIF                                                                      | IP, compte, port ONVIF                                                                                    | go2rtc demande son flux à la caméra ; le premier profil est utilisé (parfois en H265 : préférez alors le RTSP).                                                                   |
+| Toutes       | Source go2rtc personnalisée                                                       | la source, telle que go2rtc la lit (`rtsp://`, `ffmpeg:`, `tapo://`, `homekit://`…)                       | Saisie telle quelle : encodez les caractères spéciaux d'un mot de passe (`@` → `%40`).                                                                                            |
+
+**Champs avancés** (facultatifs ; vide = le réglage du modèle) : chemins des
+flux principal et secondaire, port du flux (RTSP, ou HTTP pour le MJPEG), port
+ONVIF et compte de contrôle (PTZ, par défaut le compte de la caméra), variante
+d'authentification Tapo, source personnalisée et source secondaire
+personnalisée. Saisissez `-` dans un champ texte pour le vider — par exemple
+`-` comme chemin secondaire n'ouvre qu'une connexion à la caméra.
+
+- **Deux flux** : Frigate enregistre le flux principal et détecte sur le
+  secondaire ; les deux passent par le go2rtc de Frigate, la caméra ne reçoit
+  donc qu'une connexion par flux, quel que soit le lecteur (détection,
+  enregistrement, direct).
+- **2-3 connexions simultanées** : les caméras Tapo et D-Link mydlink
+  acceptent peu de connexions. Si l'app du fabricant ou son cloud utilisent la
+  caméra en continu, gardez un seul flux (`-` comme chemin secondaire).
+- **Caméras sur batterie** (Tapo batterie/solaire, Reolink Argus) : elles
+  **doivent être alimentées sur secteur** (ou par un panneau solaire
+  suffisant). Frigate lit leur flux en continu et viderait la batterie en
+  quelques heures. Dans vos scènes, une condition sur le niveau de batterie
+  (> 50 %) évite de compter sur une caméra sur le point de s'éteindre.
+- **Zones, masques, filtres** : dessinez-les dans l'interface Frigate ; ils
+  sont conservés. Gladys ne gère, pour les caméras qu'il a ajoutées, que les
+  flux go2rtc, les entrées ffmpeg, les images par seconde de détection (et la
+  taille de détection Tapo), les objets suivis, le nom affiché et le point
+  d'accès ONVIF. Les caméras ajoutées dans l'interface Frigate ne sont jamais
+  modifiées.
+- Les mots de passe des caméras sont enregistrés dans `managed/cameras.json`
+  (lisible par l'intégration seule) et écrits dans `config.yml` (flux go2rtc,
+  section ONVIF), que l'interface Frigate montre à ses administrateurs dans
+  son éditeur de configuration. Ils ne sont jamais journalisés ni affichés
+  dans les réponses des boutons.
 
 ### Configuration et données
 
@@ -150,6 +225,8 @@ flux go2rtc, utilisateurs) est conservé :
   **alertes** (7), **détections** (7) et **captures** (14) ; 0 = aucun. Une
   valeur enregistrée dans Gladys l'emporte ; videz un champ pour garder la
   valeur réglée dans l'interface Frigate.
+- Les caméras ajoutées depuis Gladys (voir « Ajouter des caméras ») : leurs
+  flux go2rtc et les parties de leur section qui y sont listées.
 
 Où sont les données, dans le dossier de données de l'intégration
 (`/data/containers/frigate/…` vu de l'intégration) :
@@ -497,9 +574,10 @@ se lit pas en direct, comme dans Frigate.
   épinglée. En cas de doute, comparez-la à celle de votre Frigate (commande
   ci-dessus).
 - **Démarrer Frigate**, **Arrêter Frigate**, **Redémarrer Frigate**,
-  **Afficher les identifiants Frigate** : mode géré uniquement (voir
-  « Frigate installé par Gladys ») ; en mode distant, ils répondent qu'ils
-  ne s'appliquent pas. En mode géré, **Tester la connexion** montre aussi
+  **Afficher les identifiants Frigate**, **Caméras** (ajouter, modifier,
+  supprimer, lister) : mode géré uniquement (voir « Frigate installé par
+  Gladys ») ; en mode distant, ils répondent qu'ils ne s'appliquent pas
+  (ajoutez les caméras dans l'interface de votre Frigate). En mode géré, **Tester la connexion** montre aussi
   l'état du conteneur Frigate, le détecteur, la conservation et l'espace
   occupé par les enregistrements.
 

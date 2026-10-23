@@ -105,14 +105,86 @@ exposes `/dev/dri` only, not the NVIDIA runtime): choose **None**, or a Coral.
    "Frigate UI" link of the supervision block and of the managed section),
    and the `admin` account the integration created. The certificate is
    self-signed: accept it in your browser. The answer is only shown to you.
-4. In the Frigate UI, add your cameras (its configuration editor), then **Refresh the cameras** and add them in
-   the Discover tab, as in remote mode. Camera management from Gladys comes
-   in a later version.
+4. Add your cameras with the **Cameras** button (see "Adding cameras"
+   below), or in the Frigate UI; then **Add to Gladys** in the Discover tab,
+   as in remote mode.
 
 **Stop Frigate** stops the container (Gladys will not restart it);
 **Restart Frigate** regenerates the configuration and restarts it. Saving the
 configuration of the integration applies the managed settings at once: a
 running Frigate restarts only when its configuration actually changes.
+
+### Adding cameras (managed mode)
+
+The **Cameras** button manages the cameras of a Frigate installed by Gladys,
+without writing any YAML. Pick its **operation**, fill in the fields it
+uses (the others are ignored), and run it:
+
+- **Add a camera**: a name, a model from the catalog below (generic RTSP
+  when empty), the IP address and the account of the camera. Optional: the
+  objects to detect (`person` when empty, comma-separated Frigate labels:
+  `person, car, dog, cat, horse, bird, bicycle, motorcycle, bus, truck`…)
+  and the detection frames per second (5 when empty, 1 to 15).
+- **Edit a camera**: pick it in the **Camera** list (or type its Frigate name
+  when it is not created in Gladys yet). A blank field keeps its value;
+  objects and frames per second replace the stored ones when filled in.
+- **Remove a camera**: takes it out of Frigate. Its recordings already made
+  stay in the Frigate media folder; the Gladys device stays too (delete it
+  from its page if you no longer need it).
+- **List the cameras** (the default operation): the cameras added from
+  Gladys (model, address, objects, frames per second — never a password)
+  and the ones added in the Frigate UI.
+
+After each change, the integration writes the Frigate configuration and
+restarts Frigate when it runs (about 30 seconds; the connection status
+follows). Then open the **Discover** tab, press **Scan**, and **Add to
+Gladys**. The answer of the button gives the note of the model (what to do
+on the camera side) and these next steps.
+
+The **Frigate name** of a camera is derived from its name once and for all
+("Front door" → `front_door`): it identifies the Gladys device forever.
+Editing the name later only changes the name shown by Frigate.
+
+| Brand        | Models                                                                        | What to enter                                                                                     | Note                                                                                                                                                     |
+| ------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TP-Link Tapo | wired: C100, C110, C120, C200, C210, C225, C310, C320WS, C325WB, C500, C520WS | IP, the **camera account** of the Tapo app (camera settings → Advanced settings → Camera account) | Not your TP-Link cloud account. Streams `stream1` / `stream2`, ONVIF (PTZ) on port 2020.                                                                 |
+| TP-Link Tapo | battery/solar: C400, C420, C425, C460, C610, C645D, C660, D230                | IP, the password of your **TP-Link cloud** account (no user)                                      | No RTSP: go2rtc's `tapo://`, light 640×360 stream. "401 Unauthorized" in the Frigate logs: edit the camera with the authentication variant **SHA256**.   |
+| Reolink      | RLC, E1, Duo (RTSP)                                                           | IP, the camera account                                                                            | Paths `h264Preview_01_main` / `h264Preview_01_sub`, ONVIF on port 8000. Enable RTSP / ONVIF in the Reolink app if they are off.                          |
+| Reolink      | Argus and other battery cameras (Home Hub)                                    | IP **of the Home Hub**, its account                                                               | Channel 1 by default (`Preview_01_main` / `Preview_01_sub`): for the 2nd camera of the hub, set the paths `Preview_02_main` / `Preview_02_sub`.          |
+| D-Link       | DCS-5020L                                                                     | IP, a user account of the camera                                                                  | No RTSP: MJPEG stream (`video.cgi`, port 80) re-encoded to H264. Pan/tilt and night mode (later version) need the **admin** account as control account.  |
+| D-Link       | DCS-8302LH, DCS-8635LH (mydlink)                                              | IP, user `admin`, password = the **PIN code** of the camera                                       | Enable **Local Access** in the mydlink app, then unplug the camera a few seconds. Full PIN refused: try its last 6 digits. DCS-8635LH: one 1080p stream. |
+| Any          | RTSP camera (generic)                                                         | IP, account, the **path** of the main stream (and of a light one)                                 | For instance `stream1`, `live/ch0`, `cam/realmonitor?channel=1&subtype=0`.                                                                               |
+| Any          | ONVIF camera                                                                  | IP, account, ONVIF port                                                                           | go2rtc asks the camera for its stream; the first profile is used (sometimes H265: prefer RTSP then).                                                     |
+| Any          | Custom go2rtc source                                                          | the source, as go2rtc reads it (`rtsp://`, `ffmpeg:`, `tapo://`, `homekit://`…)                   | Typed as is: URL-encode the special characters of a password (`@` → `%40`).                                                                              |
+
+**Advanced fields** (optional; empty = the setting of the model): main and
+secondary stream paths, stream port (RTSP, or HTTP for MJPEG), ONVIF port and
+control account (PTZ, the camera account by default), Tapo authentication
+variant, custom source and custom secondary source. Type `-` in a text field
+to empty it — for instance `-` as the secondary path opens a single
+connection to the camera.
+
+- **Two streams**: Frigate records the main stream and detects on the
+  secondary one; both go through the go2rtc of Frigate, so the camera gets
+  one connection per stream whatever reads it (detection, recording, live
+  view).
+- **2-3 simultaneous connections**: Tapo and D-Link mydlink cameras accept
+  few connections. When the vendor app or its cloud use the camera
+  continuously, keep a single stream (`-` as the secondary path).
+- **Battery cameras** (Tapo battery/solar, Reolink Argus): they **must be
+  mains-powered** (or on a sufficient solar panel). Frigate reads their
+  stream continuously and would drain the battery in hours. In your scenes,
+  a condition on the battery level (> 50 %) avoids relying on a camera about
+  to go dark.
+- **Zones, masks, filters**: draw them in the Frigate UI; they are kept.
+  Gladys only owns, for the cameras it added, the go2rtc streams, the ffmpeg
+  inputs, the detection frames per second (and the Tapo detection size), the
+  tracked objects, the name shown and the ONVIF endpoint. The cameras you add
+  in the Frigate UI are never touched.
+- The camera passwords are stored in `managed/cameras.json` (readable by the
+  integration only) and written in `config.yml` (go2rtc streams, ONVIF
+  section), which the Frigate UI shows to its admins in its configuration
+  editor. They are never logged nor shown in the answers of the buttons.
 
 ### Configuration and data
 
@@ -136,6 +208,8 @@ kept:
   **alerts** (7), **detections** (7) and **snapshots** (14); 0 = none. A value
   saved in Gladys wins; empty a field to keep the value set in the Frigate
   UI.
+- The cameras added from Gladys (see "Adding cameras"): their go2rtc
+  streams and the parts of their section listed there.
 
 Where the data lives, in the data folder of the integration
 (`/data/containers/frigate/…` seen from the integration):
@@ -459,8 +533,9 @@ enabled" feature off) does not play live, as in Frigate.
   and of the broker, reconnects, and shows the fingerprint now pinned.
   Compare it with the one of your Frigate (command above) when in doubt.
 - **Start Frigate**, **Stop Frigate**, **Restart Frigate**, **Show the
-  Frigate credentials**: managed mode only (see "Frigate installed by
-  Gladys"); in remote mode they answer that they do not apply. In managed
+  Frigate credentials**, **Cameras** (add, edit, remove, list): managed
+  mode only (see "Frigate installed by Gladys"); in remote mode they answer
+  that they do not apply (add the cameras in the UI of your Frigate). In managed
   mode, **Test the connection** also shows the state of the Frigate
   container, the detector, the retention and the space used by the
   recordings.

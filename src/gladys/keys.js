@@ -34,4 +34,8 @@ export const MANIFEST_ACTIONS = Object.freeze({
   // catalog.
   DIAGNOSTICS: 'diagnostics',
   PROPOSE_CAMERA: 'propose_camera',
+  // Camera management from Gladys (managed mode): one button whose
+  // `operation` field picks add / edit / remove / list — Gladys accepts ten
+  // manifest actions at most.
+  CAMERA: 'camera',
 });

@@ -23,6 +23,9 @@ import {
   GPU_VENDORS as DETECTOR_GPU_VENDORS,
   HARDWARE_CLASSES,
 } from '../src/frigate/managed/detector.js';
+import { CATALOG, DEFAULT_MODEL, TAPO_AUTH_VARIANTS } from '../src/frigate/managed/catalog.js';
+import { DEFAULT_DETECT_FPS, MAX_DETECT_FPS } from '../src/frigate/managed/constants.js';
+import { CAMERA_OPERATIONS } from '../src/gladys/cameraActions.js';
 import { MANIFEST_ACTIONS, SCENE_ACTIONS, SCENE_TRIGGERS } from '../src/gladys/keys.js';
 
 const manifest = JSON.parse(
@@ -101,6 +104,7 @@ test('manifest action keys are frozen', () => {
     'show_credentials',
     'diagnostics',
     'propose_camera',
+    'camera',
   ]);
 });
 
@@ -284,4 +288,88 @@ test('the Frigate URL is not required by the form (managed mode has none)', () =
 test('index.js follows the hardware grants of the sub-container', async () => {
   const index = await readFile(new URL('../index.js', import.meta.url), 'utf8');
   assert.match(index, /gladys\.onHardwareUpdated\(/);
+});
+
+// ---- Camera management (managed mode) ---------------------------------------
+
+const cameraAction = () => manifest.actions.find((a) => a.key === MANIFEST_ACTIONS.CAMERA);
+const field = (name) => cameraAction().fields.find((f) => f.key === name);
+
+test('the manifest stays within the ten actions Gladys accepts', () => {
+  assert.ok(manifest.actions.length <= 10, `${manifest.actions.length} actions`);
+});
+
+test('one Cameras button: its operation picks add, edit, remove or list (list by default)', () => {
+  const entry = cameraAction();
+  assert.ok(entry.timeout_seconds >= 60, 'generation + restart');
+  const operation = entry.fields[0];
+  assert.equal(operation.key, 'operation');
+  assert.equal(operation.type, 'select');
+  assert.equal(operation.required, true);
+  assert.equal(operation.default, 'list');
+  assert.deepEqual(
+    operation.options.map((o) => o.value),
+    [...CAMERA_OPERATIONS],
+  );
+});
+
+test('the Cameras form: bilingual, and no default but the operation (an edit would get it)', () => {
+  for (const f of cameraAction().fields) {
+    assert.ok(f.label.en && f.label.fr, `${f.key} label`);
+    if (f.description) assert.ok(f.description.en && f.description.fr, f.key);
+    if (f.type === 'select' && !f.source) {
+      assert.ok(f.options.length > 0, `${f.key} options`);
+      for (const option of f.options) assert.ok(option.label.en && option.label.fr);
+    }
+    if (f.key !== 'operation') {
+      assert.equal(f.default, undefined, `${f.key}: blank keeps its value on edit`);
+      assert.notEqual(f.required, true, `${f.key}: not used by every operation`);
+    }
+  }
+  for (const name of ['password', 'onvif_password']) assert.equal(field(name).type, 'secret');
+  for (const name of [
+    'label',
+    'model',
+    'host',
+    'username',
+    'objects',
+    'detect_fps',
+    'path',
+    'sub_path',
+    'port',
+    'onvif_port',
+    'onvif_username',
+    'custom_source',
+    'tapo_auth_variant',
+    'name',
+  ]) {
+    assert.ok(field(name), name);
+  }
+});
+
+test('the model select offers exactly the catalog; the Tapo variants the code knows', () => {
+  assert.deepEqual(
+    field('model').options.map((o) => o.value),
+    CATALOG.map((entry) => entry.id),
+  );
+  assert.deepEqual(
+    field('model').options.map((o) => o.label),
+    CATALOG.map((entry) => entry.label),
+  );
+  assert.ok(CATALOG.some((entry) => entry.id === DEFAULT_MODEL));
+  assert.deepEqual(
+    field('tapo_auth_variant').options.map((o) => o.value),
+    [...TAPO_AUTH_VARIANTS],
+  );
+  const fps = field('detect_fps');
+  assert.equal(fps.min, 1);
+  assert.equal(fps.max, MAX_DETECT_FPS);
+  assert.ok(DEFAULT_DETECT_FPS >= fps.min && DEFAULT_DETECT_FPS <= fps.max);
+});
+
+test('edit and remove pick a device, or a typed name for a camera not created yet', () => {
+  const camera = field('camera');
+  assert.equal(camera.type, 'select');
+  assert.equal(camera.source, 'devices');
+  assert.equal(field('name').type, 'string');
 });

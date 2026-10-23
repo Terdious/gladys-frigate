@@ -16,6 +16,10 @@
 //   - The admin password Gladys sets on Frigate lives in
 //     /data/managed/state.json (0600), for the "Show the Frigate
 //     credentials" button only.
+//   - The cameras added from Gladys live in /data/managed/cameras.json
+//     (0600: camera passwords) and are part of every generation of
+//     config.yml; applyCameras() writes it after an add / edit / removal
+//     and restarts a running Frigate when the file changed.
 //
 // The connection lifecycle (status, polling while Frigate starts) is in
 // ./frigateSession.js; this module holds the Gladys calls, the files and the
@@ -26,10 +30,12 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { explicitRetention, usesMqtt } from '../config.js';
-import { AdminBootstrapError, ManagedConfigError } from '../frigate/errors.js';
+import { AdminBootstrapError, CamerasStoreError, ManagedConfigError } from '../frigate/errors.js';
 import { generatePassword, setAdminPassword } from '../frigate/managed/adminAccount.js';
 import { countConfigCameras } from '../frigate/managed/advice.js';
-import { renderConfig, writeConfigFile } from '../frigate/managed/configFile.js';
+import { buildCameraConfig, resolveCamera } from '../frigate/managed/cameraSources.js';
+import { createCamerasStore } from '../frigate/managed/camerasStore.js';
+import { namesInFile, renderConfig, writeConfigFile } from '../frigate/managed/configFile.js';
 import {
   ADMIN_USER,
   CONFIG_DIR,
@@ -121,6 +127,12 @@ export function describeManagedError(err) {
   }
   if (err instanceof AdminBootstrapError) {
     return MANAGED_TEXT.ADMIN_PENDING;
+  }
+  if (err instanceof CamerasStoreError) {
+    return {
+      en: 'The list of the cameras added from Gladys (managed/cameras.json in the data folder of the integration) is not valid JSON: fix or delete it (the cameras must then be added again).',
+      fr: "La liste des caméras ajoutées depuis Gladys (managed/cameras.json dans le dossier de données de l'intégration) n'est pas du JSON valide : corrigez-la ou supprimez-la (les caméras devront alors être ajoutées de nouveau).",
+    };
   }
   // An older Gladys without the /container routes, or a manifest without the
   // `frigate` entry.
@@ -257,6 +269,7 @@ export function createManagedFrigate({
 }) {
   const configDir = join(dataDir, CONFIG_DIR);
   const stateFile = createStateFile({ filePath: join(dataDir, 'managed', 'state.json') });
+  const camerasStore = createCamerasStore({ filePath: join(dataDir, 'managed', 'cameras.json') });
   let decision = null;
   let lastWrite = null;
   let adminInFlight = null;
@@ -292,11 +305,34 @@ export function createManagedFrigate({
       : {};
   }
 
+  /**
+   * The managed cameras as config.yml sections, and the ones removed since
+   * the last generation. A camera that cannot be built (a record edited by
+   * hand) is skipped, not fatal: the other cameras still apply.
+   */
+  async function cameraSettings() {
+    const records = await camerasStore.cameras();
+    const cameras = [];
+    for (const [name, record] of Object.entries(records)) {
+      try {
+        cameras.push(buildCameraConfig(resolveCamera(name, record)));
+      } catch (err) {
+        // CameraSourceError messages carry no credential.
+        logger.warn(`Managed camera skipped: ${err.message}`);
+      }
+    }
+    const forget = (await camerasStore.applied()).filter((name) => !(name in records));
+    return { cameras, forget, names: Object.keys(records) };
+  }
+
   async function generate(config, raw, entry) {
+    const { cameras, forget, names } = await cameraSettings();
     const result = await writeConfigFile({
       configDir,
-      settings: settingsFor(config, raw, entry?.devices ?? []),
+      settings: { ...settingsFor(config, raw, entry?.devices ?? []), cameras, forget },
     });
+    // config.yml now holds exactly these managed cameras.
+    await camerasStore.setApplied(names);
     lastWrite = result;
     if (result.changed) {
       logger.info(
@@ -416,6 +452,45 @@ export function createManagedFrigate({
       return { ...result, restarted: running };
     },
 
+    /** The store of the cameras managed from Gladys. */
+    cameras: camerasStore,
+
+    /**
+     * The camera and go2rtc stream names of config.yml (the cameras added in
+     * the Frigate UI among them); empty lists without a file, null when it
+     * is not valid YAML.
+     */
+    async namesInFile() {
+      try {
+        return namesInFile(await readFile(join(configDir, CONFIG_FILE), 'utf8'));
+      } catch (err) {
+        if (err.code === 'ENOENT') return { cameras: [], streams: [] };
+        throw err;
+      }
+    },
+
+    /**
+     * After an add / edit / removal of a managed camera: regenerate
+     * config.yml, restart a running Frigate when it changed. A stopped
+     * Frigate gets the file at its next start; one Gladys is (re)starting
+     * reads it when it comes up.
+     * @returns {Promise<{ changed: boolean, restarted: boolean,
+     *   state: 'running' | 'waiting' | 'stopped' } & object>}
+     */
+    async applyCameras(config, raw) {
+      const current = await container();
+      const result = await generate(config, raw, current);
+      let state = 'stopped';
+      if (current?.status === 'running') state = 'running';
+      else if (current?.desired === 'running') state = 'waiting';
+      const restarted = state === 'running' && result.changed;
+      if (restarted) {
+        await restartWith(current, environment(config));
+        logger.info('Frigate restarted to apply the managed cameras');
+      }
+      return { ...result, restarted, state };
+    },
+
     /**
      * What "Test the connection" shows without writing anything: the
      * detector the hardware gives, the retention config.yml would get and
@@ -429,7 +504,16 @@ export function createManagedFrigate({
       } catch {
         // No file yet: the defaults.
       }
-      const cameras = countConfigCameras(content);
+      // The cameras of the file plus the managed ones it may not hold yet
+      // (a store written, config.yml not regenerated), each counted once.
+      let cameras = countConfigCameras(content);
+      try {
+        const inFile = new Set(namesInFile(content)?.cameras ?? []);
+        const pending = Object.keys(await camerasStore.cameras()).filter((n) => !inFile.has(n));
+        cameras += pending.length;
+      } catch {
+        // An unreadable store: the file count alone.
+      }
       try {
         const { retention, customDetectors } = renderConfig(content, settings);
         return { decision, retention, customDetectors, cameras };

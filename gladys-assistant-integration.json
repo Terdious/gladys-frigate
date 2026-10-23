@@ -702,6 +702,411 @@
           "required": false
         }
       ]
+    },
+    {
+      "key": "camera",
+      "label": {
+        "en": "Cameras: add, edit, remove, list",
+        "fr": "Caméras : ajouter, modifier, supprimer, lister"
+      },
+      "description": {
+        "en": "Managed mode: cameras from the model catalog (Tapo, Reolink, D-Link, RTSP, ONVIF); Frigate restarts after a change.",
+        "fr": "Mode géré : caméras du catalogue de modèles (Tapo, Reolink, D-Link, RTSP, ONVIF) ; Frigate redémarre après une modification."
+      },
+      "timeout_seconds": 60,
+      "fields": [
+        {
+          "key": "operation",
+          "type": "select",
+          "required": true,
+          "label": {
+            "en": "Operation",
+            "fr": "Opération"
+          },
+          "description": {
+            "en": "List: the cameras added from Gladys and those of the Frigate UI. Edit: blank fields keep their value.",
+            "fr": "Lister : les caméras ajoutées depuis Gladys et celles de l'interface Frigate. Modifier : les champs vides gardent leur valeur."
+          },
+          "options": [
+            {
+              "value": "add",
+              "label": {
+                "en": "Add a camera",
+                "fr": "Ajouter une caméra"
+              }
+            },
+            {
+              "value": "edit",
+              "label": {
+                "en": "Edit a camera",
+                "fr": "Modifier une caméra"
+              }
+            },
+            {
+              "value": "remove",
+              "label": {
+                "en": "Remove a camera",
+                "fr": "Supprimer une caméra"
+              }
+            },
+            {
+              "value": "list",
+              "label": {
+                "en": "List the cameras",
+                "fr": "Lister les caméras"
+              }
+            }
+          ],
+          "default": "list"
+        },
+        {
+          "key": "camera",
+          "type": "select",
+          "source": "devices",
+          "label": {
+            "en": "Camera",
+            "fr": "Caméra"
+          },
+          "description": {
+            "en": "Edit, remove: a camera added from Gladys and created in Gladys.",
+            "fr": "Modifier, supprimer : une caméra ajoutée depuis Gladys et créée dans Gladys."
+          }
+        },
+        {
+          "key": "name",
+          "type": "string",
+          "label": {
+            "en": "Or its Frigate name",
+            "fr": "Ou son nom Frigate"
+          },
+          "placeholder": {
+            "en": "porch",
+            "fr": "entree"
+          },
+          "description": {
+            "en": "Edit, remove: for a camera not created in Gladys yet (List gives the names).",
+            "fr": "Modifier, supprimer : pour une caméra pas encore créée dans Gladys (Lister donne les noms)."
+          }
+        },
+        {
+          "key": "label",
+          "type": "string",
+          "label": {
+            "en": "Camera name",
+            "fr": "Nom de la caméra"
+          },
+          "placeholder": {
+            "en": "Porch",
+            "fr": "Entrée"
+          },
+          "description": {
+            "en": "Add: its Frigate name is derived from it once and for all (\"Porch\" → porch). Edit: the new name shown (the Frigate name does not change).",
+            "fr": "Ajouter : son nom Frigate en est tiré une fois pour toutes (« Entrée » → entree). Modifier : le nouveau nom affiché (le nom Frigate ne change pas)."
+          }
+        },
+        {
+          "key": "model",
+          "type": "select",
+          "label": {
+            "en": "Camera model",
+            "fr": "Modèle de caméra"
+          },
+          "options": [
+            {
+              "value": "tapo-wired",
+              "label": {
+                "en": "TP-Link Tapo — wired (C100…C520WS)",
+                "fr": "TP-Link Tapo — filaire (C100…C520WS)"
+              }
+            },
+            {
+              "value": "tapo-battery",
+              "label": {
+                "en": "TP-Link Tapo — battery/solar (C400…D230)",
+                "fr": "TP-Link Tapo — batterie/solaire (C400…D230)"
+              }
+            },
+            {
+              "value": "reolink-rtsp",
+              "label": {
+                "en": "Reolink — RLC / E1 / Duo (RTSP)",
+                "fr": "Reolink — RLC / E1 / Duo (RTSP)"
+              }
+            },
+            {
+              "value": "reolink-hub",
+              "label": {
+                "en": "Reolink — Argus / battery (Home Hub)",
+                "fr": "Reolink — Argus / batterie (Home Hub)"
+              }
+            },
+            {
+              "value": "dlink-dcs-5020l",
+              "label": {
+                "en": "D-Link DCS-5020L (MJPEG)",
+                "fr": "D-Link DCS-5020L (MJPEG)"
+              }
+            },
+            {
+              "value": "dlink-dcs-8302lh",
+              "label": {
+                "en": "D-Link DCS-8302LH (mydlink)",
+                "fr": "D-Link DCS-8302LH (mydlink)"
+              }
+            },
+            {
+              "value": "dlink-dcs-8635lh",
+              "label": {
+                "en": "D-Link DCS-8635LH (mydlink)",
+                "fr": "D-Link DCS-8635LH (mydlink)"
+              }
+            },
+            {
+              "value": "generic-rtsp",
+              "label": {
+                "en": "RTSP camera (generic)",
+                "fr": "Caméra RTSP (générique)"
+              }
+            },
+            {
+              "value": "onvif",
+              "label": {
+                "en": "ONVIF camera (automatic stream)",
+                "fr": "Caméra ONVIF (flux automatique)"
+              }
+            },
+            {
+              "value": "custom",
+              "label": {
+                "en": "Custom go2rtc source",
+                "fr": "Source go2rtc personnalisée"
+              }
+            }
+          ],
+          "description": {
+            "en": "Add: generic RTSP when empty. Edit: blank = unchanged.",
+            "fr": "Ajouter : RTSP générique si vide. Modifier : vide = inchangé."
+          }
+        },
+        {
+          "key": "host",
+          "type": "string",
+          "label": {
+            "en": "Camera IP address",
+            "fr": "Adresse IP de la caméra"
+          },
+          "placeholder": {
+            "en": "192.168.1.20",
+            "fr": "192.168.1.20"
+          },
+          "description": {
+            "en": "The camera (or the Reolink Home Hub) on your network. Not needed for a custom source.",
+            "fr": "La caméra (ou le Home Hub Reolink) sur votre réseau. Inutile pour une source personnalisée."
+          }
+        },
+        {
+          "key": "username",
+          "type": "string",
+          "label": {
+            "en": "Camera user",
+            "fr": "Utilisateur de la caméra"
+          },
+          "description": {
+            "en": "The account of the camera (Tapo: the camera account, not the cloud one; D-Link mydlink: admin).",
+            "fr": "Le compte de la caméra (Tapo : le compte caméra, pas le compte cloud ; D-Link mydlink : admin)."
+          }
+        },
+        {
+          "key": "password",
+          "type": "secret",
+          "label": {
+            "en": "Camera password",
+            "fr": "Mot de passe de la caméra"
+          },
+          "description": {
+            "en": "Tapo battery/solar: the TP-Link cloud password; D-Link mydlink: the PIN code.",
+            "fr": "Tapo batterie/solaire : le mot de passe du cloud TP-Link ; D-Link mydlink : le code PIN."
+          }
+        },
+        {
+          "key": "objects",
+          "type": "string",
+          "label": {
+            "en": "Objects to detect",
+            "fr": "Objets à détecter"
+          },
+          "description": {
+            "en": "Comma-separated Frigate labels (person when empty on Add): person, car, dog, cat, horse, bird, bicycle, motorcycle, bus, truck…",
+            "fr": "Étiquettes Frigate séparées par des virgules (person si vide à l'ajout) : person, car, dog, cat, horse, bird, bicycle, motorcycle, bus, truck…"
+          }
+        },
+        {
+          "key": "detect_fps",
+          "type": "number",
+          "label": {
+            "en": "Detection frames per second",
+            "fr": "Images par seconde de détection"
+          },
+          "description": {
+            "en": "5 when empty on Add (recommended); more costs CPU or Coral time.",
+            "fr": "5 si vide à l'ajout (recommandé) ; davantage coûte du temps CPU ou Coral."
+          },
+          "min": 1,
+          "max": 15
+        },
+        {
+          "key": "advanced_section",
+          "type": "section",
+          "label": {
+            "en": "Advanced (optional)",
+            "fr": "Avancé (facultatif)"
+          },
+          "description": {
+            "en": "Leave empty to use the settings of the model. Type - in a text field to empty it (for instance - in the secondary path: a single camera connection).",
+            "fr": "Laissez vide pour utiliser les réglages du modèle. Saisissez - dans un champ texte pour le vider (par exemple - dans le chemin secondaire : une seule connexion à la caméra)."
+          }
+        },
+        {
+          "key": "path",
+          "type": "string",
+          "label": {
+            "en": "Main stream path",
+            "fr": "Chemin du flux principal"
+          },
+          "placeholder": {
+            "en": "stream1",
+            "fr": "stream1"
+          },
+          "description": {
+            "en": "Recording stream (RTSP or MJPEG). Overrides the path of the model.",
+            "fr": "Flux d'enregistrement (RTSP ou MJPEG). Remplace le chemin du modèle."
+          }
+        },
+        {
+          "key": "sub_path",
+          "type": "string",
+          "label": {
+            "en": "Secondary stream path",
+            "fr": "Chemin du flux secondaire"
+          },
+          "placeholder": {
+            "en": "stream2",
+            "fr": "stream2"
+          },
+          "description": {
+            "en": "Light stream used for detection (RTSP). - for none.",
+            "fr": "Flux léger utilisé pour la détection (RTSP). - pour aucun."
+          }
+        },
+        {
+          "key": "port",
+          "type": "number",
+          "label": {
+            "en": "Stream port",
+            "fr": "Port du flux"
+          },
+          "description": {
+            "en": "RTSP port (554 by default), or HTTP port of an MJPEG camera (80).",
+            "fr": "Port RTSP (554 par défaut), ou port HTTP d'une caméra MJPEG (80)."
+          },
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "onvif_port",
+          "type": "number",
+          "label": {
+            "en": "ONVIF port",
+            "fr": "Port ONVIF"
+          },
+          "description": {
+            "en": "PTZ (and the ONVIF model): Tapo 2020, Reolink 8000, often 80 elsewhere.",
+            "fr": "PTZ (et le modèle ONVIF) : Tapo 2020, Reolink 8000, souvent 80 ailleurs."
+          },
+          "min": 1,
+          "max": 65535
+        },
+        {
+          "key": "onvif_username",
+          "type": "string",
+          "label": {
+            "en": "Control user (ONVIF)",
+            "fr": "Utilisateur de contrôle (ONVIF)"
+          },
+          "description": {
+            "en": "For PTZ; by default the camera user.",
+            "fr": "Pour le PTZ ; par défaut l'utilisateur de la caméra."
+          }
+        },
+        {
+          "key": "onvif_password",
+          "type": "secret",
+          "label": {
+            "en": "Control password (ONVIF)",
+            "fr": "Mot de passe de contrôle (ONVIF)"
+          },
+          "description": {
+            "en": "By default the camera password.",
+            "fr": "Par défaut le mot de passe de la caméra."
+          }
+        },
+        {
+          "key": "tapo_auth_variant",
+          "type": "select",
+          "label": {
+            "en": "Tapo authentication variant",
+            "fr": "Variante d'authentification Tapo"
+          },
+          "description": {
+            "en": "Tapo battery/solar only (Default when empty on Add): SHA256 when the Frigate logs show 401 Unauthorized.",
+            "fr": "Tapo batterie/solaire uniquement (Par défaut si vide à l'ajout) : SHA256 si les logs Frigate montrent 401 Unauthorized."
+          },
+          "options": [
+            {
+              "value": "default",
+              "label": {
+                "en": "Default (cloud password)",
+                "fr": "Par défaut (mot de passe cloud)"
+              }
+            },
+            {
+              "value": "sha256",
+              "label": {
+                "en": "SHA256 (recent firmwares)",
+                "fr": "SHA256 (firmwares récents)"
+              }
+            }
+          ]
+        },
+        {
+          "key": "custom_source",
+          "type": "string",
+          "label": {
+            "en": "Custom source (go2rtc)",
+            "fr": "Source personnalisée (go2rtc)"
+          },
+          "placeholder": {
+            "en": "rtsp://user:password@192.168.1.20:554/live",
+            "fr": "rtsp://utilisateur:motdepasse@192.168.1.20:554/live"
+          },
+          "description": {
+            "en": "Any go2rtc source, typed as is: replaces the stream of the model.",
+            "fr": "Toute source go2rtc, saisie telle quelle : remplace le flux du modèle."
+          }
+        },
+        {
+          "key": "custom_sub_source",
+          "type": "string",
+          "label": {
+            "en": "Custom secondary source",
+            "fr": "Source secondaire personnalisée"
+          },
+          "description": {
+            "en": "Optional go2rtc source for detection (custom source only).",
+            "fr": "Source go2rtc facultative pour la détection (source personnalisée uniquement)."
+          }
+        }
+      ]
     }
   ],
   "scene_triggers": [

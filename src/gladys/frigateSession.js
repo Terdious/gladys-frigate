@@ -8,8 +8,9 @@
 //     is retried every minute; a refused certificate, refused credentials or
 //     an unsupported version wait for the user instead (looping would only
 //     hit Frigate's login rate limit or hide a real problem).
-//   - The three manifest action buttons: test_connection, refresh_cameras,
-//     reset_certificate.
+//   - The manifest action buttons: test_connection, refresh_cameras,
+//     reset_certificate; managed mode: start / stop / restart Frigate, its
+//     credentials, and the "Cameras" button (./cameraActions.js).
 //   - onConnected(capabilities) runs after every successful read of Frigate
 //     (index.js publishes the discovery list with it).
 //   - The real-time feed (milestone 3): once Frigate has been read, the MQTT
@@ -49,6 +50,7 @@ import { probeMqtt } from '../frigate/mqttProbe.js';
 import { parseMessage } from '../frigate/topics.js';
 import { createWsFeed, readCameraActivity } from '../frigate/wsClient.js';
 import { adviceSentence, resourceAdvice } from '../frigate/managed/advice.js';
+import { CAMERA_TEXT, createCameraActions } from './cameraActions.js';
 import {
   MANAGED_TEXT,
   describeDetector,
@@ -157,6 +159,8 @@ export function createFeed({ config, client, trustStore }) {
  * @param {number} [options.managedMaxPolls]
  * @param {(container: object | null) => void} [options.onContainer] every read
  *   of the Frigate sub-container (managed mode)
+ * @param {(externalId: string) => string | null} [options.cameraOfDevice] the
+ *   Frigate camera name of a device external id ("Cameras" button)
  */
 export function createFrigateSession({
   gladys,
@@ -180,6 +184,7 @@ export function createFrigateSession({
   managedPollMs = MANAGED_POLL_MS,
   managedMaxPolls = MANAGED_MAX_POLLS,
   onContainer = () => {},
+  cameraOfDevice,
 }) {
   let config = null;
   let raw = {};
@@ -207,6 +212,26 @@ export function createFrigateSession({
   let tracker = newTracker();
   let adminDone = false;
   let adminError = null;
+  let managedCameras = null; // number of cameras added from Gladys (status)
+  // The "Cameras" button: a change regenerates config.yml and restarts Frigate
+  // through the same path as "Restart Frigate", then watches it come back
+  // (re-read and discovery follow).
+  const cameraActions = managed
+    ? createCameraActions({
+        managed,
+        logger,
+        cameraOfDevice,
+        apply: async () => {
+          const result = await managed.applyCameras(config, raw);
+          managedCameras = await cameraActions.count();
+          if (result.restarted) {
+            await markDown();
+            restartWatch();
+          }
+          return result;
+        },
+      })
+    : null;
 
   function newTracker() {
     return { startedAt: null, restarts: [], downSince: null };
@@ -471,8 +496,13 @@ export function createFrigateSession({
     const parts = [];
     if (capabilities.cameras.length === 0) {
       parts.push({
-        en: 'Add your cameras in the Frigate UI ("Show the Frigate credentials" gives its address and login).',
-        fr: "Ajoutez vos caméras dans l'interface Frigate (« Afficher les identifiants Frigate » donne son adresse et l'identifiant).",
+        en: 'Add your cameras with the "Cameras" button, operation "Add a camera" (or in the Frigate UI).',
+        fr: "Ajoutez vos caméras avec le bouton « Caméras », opération « Ajouter une caméra » (ou dans l'interface Frigate).",
+      });
+    } else if (managedCameras > 0) {
+      parts.push({
+        en: `Added from Gladys: ${managedCameras}.`,
+        fr: `Ajoutées depuis Gladys : ${managedCameras}.`,
       });
     }
     parts.push(...describeDetector(managed?.decision, managed?.lastWrite ?? {}));
@@ -524,6 +554,8 @@ export function createFrigateSession({
       onFrigateStatus(true);
       if (isManaged(config)) {
         bootstrapAdmin(currentGeneration);
+        managedCameras = (await cameraActions?.count()) ?? null;
+        if (currentGeneration !== generation) return;
       }
       await publishConnected();
     } catch (err) {
@@ -667,6 +699,32 @@ export function createFrigateSession({
     const currentGeneration = generation;
     // Not awaited: the button answers at once, the status follows.
     watchManaged(currentGeneration).catch(() => {});
+  }
+
+  /** The "Cameras" button: managed mode, with a valid configuration. */
+  function cameraGuard() {
+    if (!isManaged(config)) {
+      return CAMERA_TEXT.ONLY_MANAGED;
+    }
+    if (!managed) {
+      return MANAGED_TEXT.UNSUPPORTED;
+    }
+    if (!client) {
+      return invalidConfigAnswer();
+    }
+    return null;
+  }
+
+  /** Run the "Cameras" button; a failure of Gladys or of the files becomes its answer. */
+  async function cameraAction(run) {
+    const refused = cameraGuard();
+    if (refused) return refused;
+    try {
+      return await run();
+    } catch (err) {
+      logger.warn(`Camera change not applied: ${err.message}`);
+      return describeManagedError(err);
+    }
   }
 
   /** The managed-mode buttons refuse to run in remote mode. */
@@ -821,10 +879,17 @@ export function createFrigateSession({
                 fr: `Conteneur Frigate : ${entry.status} (souhaité : ${entry.desired ?? 'inconnu'}).`,
               }
             : MANAGED_TEXT.UNSUPPORTED;
+          const count = await cameraActions.count();
           parts.push(
             state,
             ...describeDetector(inspected.decision, inspected),
             describeRetention(inspected.retention),
+            count === null
+              ? null
+              : {
+                  en: `Cameras added from Gladys: ${count}.`,
+                  fr: `Caméras ajoutées depuis Gladys : ${count}.`,
+                },
           );
         } catch (err) {
           parts.push(describeManagedError(err));
@@ -896,6 +961,15 @@ export function createFrigateSession({
         en: `Frigate configuration read again: ${summary.en}. The cameras are listed in the Discover tab.`,
         fr: `Configuration de Frigate relue : ${summary.fr}. Les caméras sont listées dans l'onglet Découverte.`,
       };
+    },
+
+    /**
+     * "Cameras" (managed mode): add / edit / remove / list, picked by the
+     * `operation` field. A change regenerates config.yml and restarts a
+     * running Frigate; the list shows no credential.
+     */
+    cameras(fields) {
+      return cameraAction(() => cameraActions.run(fields));
     },
 
     /**

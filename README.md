@@ -60,8 +60,16 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   (MQTT, detector from the granted hardware — Coral, Intel GPU/OpenVINO, CPU —,
   VAAPI decoding, recording retention) and keeps everything set in the
   Frigate UI; it sets Frigate's admin password ("Show the Frigate
-  credentials") and talks to Frigate on its internal port 5000. Cameras are
-  added in the Frigate UI until camera management (0.5.0).
+  credentials") and talks to Frigate on its internal port 5000.
+- **Camera management from Gladys** (0.5.0, issue #6, managed mode): one
+  **Cameras** button (operation add / edit / remove / list) and a model
+  catalog — TP-Link Tapo wired and battery/solar (`tapo://`, SHA256
+  variant), Reolink RTSP and Home Hub, D-Link DCS-5020L (MJPEG),
+  DCS-8302LH and DCS-8635LH, generic RTSP, ONVIF, custom go2rtc source.
+  Cameras are stored in `/data/managed/cameras.json` (0600) and written to
+  `config.yml` (go2rtc streams, restreamed inputs with record / detect
+  roles, objects, detection fps, ONVIF endpoint); zones and masks drawn in
+  the Frigate UI are kept, cameras added there are never touched.
 - **Diagnostics** (0.7.0, issues #10, #11): a **Diagnostics** button with
   two reports — the overview (versions, feed, cameras, detectors, storage,
   pinned certificates, the managed container and its resource advice — shm
@@ -71,7 +79,7 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   user opens). No secret in any answer.
 
 Out of scope for now: faces and plates, classification, widgets, profiles,
-multiple Frigate instances, camera management from Gladys (see
+multiple Frigate instances (see
 [`ROADMAP.md`](./ROADMAP.md)).
 
 ## Architecture
@@ -103,6 +111,9 @@ src/frigate/      Frigate client — NO Gladys dependency (enforced by ESLint)
     configFile.js     idempotent config.yml generation (Gladys-owned sections only)
     adminAccount.js   admin password bootstrap (PUT /api/users/admin/password)
     stateFile.js      /data/managed/state.json (0600): admin password, last start
+    catalog.js        camera model catalog (presets, bilingual notes), COCO labels
+    cameraSources.js  managed camera -> go2rtc sources + Frigate camera section
+    camerasStore.js   /data/managed/cameras.json (0600): cameras added from Gladys
     advice.js         shm / RAM advice per camera against the container limits
 src/gladys/       thin adapter to the Gladys SDK
   frigateSession.js connection lifecycle, real-time feed, status, the buttons,
@@ -110,6 +121,7 @@ src/gladys/       thin adapter to the Gladys SDK
                     sub-container state in the status, start polling, crash loop
   managed.js        managed mode adapter: getContainers / start / stop / restart,
                     hardware grants, credentials, en/fr texts
+  cameraActions.js  the "Cameras" button (add / edit / remove / list), en/fr answers
   discovery.js      Frigate cameras -> Gladys devices (Discover tab)
   live.js           live view: go2rtc restream URL (CAMERA_URL param), both modes
   images.js         camera images (resized by Frigate): 60 KB stored, 150 KB live
