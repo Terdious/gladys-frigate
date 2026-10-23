@@ -1,15 +1,16 @@
 // -----------------------------------------------------------------------------
-// The three troubleshooting buttons:
+// The two troubleshooting buttons (the core accepts 10 manifest actions:
+// one button, two reports):
 //
-//   - "Diagnostics report": one text with everything a support thread asks
+//   - "Diagnostics", report "Overview": one text with everything a support thread asks
 //     for — versions, mode, Frigate, the real-time feed, the cameras (fps of
 //     /api/stats, `status/<role>` of the feed), the detectors, the storage,
 //     the pinned certificates, the warnings and, in managed mode, the
 //     sub-container, the detector decision, the retention and the resource
 //     advice. Read-only: it reads Frigate's /api/stats and /api/config and
 //     the state of the sub-container, never reconnects nor writes anything.
-//   - "Show the last real-time messages": the debug ring buffer fed by every
-//     message of the feed (src/frigate/debugBuffer.js).
+//   - "Diagnostics", report "Last real-time messages": the debug ring buffer
+//     fed by every message of the feed (src/frigate/debugBuffer.js).
 //   - "Propose a camera to the catalog": a pre-filled GitHub issue link the
 //     user opens themselves (src/frigate/proposal.js).
 //
@@ -43,6 +44,9 @@ import { buildProposal } from '../frigate/proposal.js';
 import { endpointKey } from '../frigate/tlsTrust.js';
 import { describeDetector, describeRetention } from './managed.js';
 import { describeAuth, describeError, describeTls, shortFingerprint } from './messages.js';
+
+/** Values of the `report` field of the `diagnostics` action (manifest). */
+export const DIAGNOSTIC_REPORTS = Object.freeze({ OVERVIEW: 'overview', MQTT: 'mqtt' });
 
 const PACKAGE_URL = new URL('../../package.json', import.meta.url);
 
@@ -297,7 +301,7 @@ export function createDiagnostics({
       statuses.set(message.camera, roles);
     },
 
-    /** "Diagnostics report". */
+    /** The overview report. */
     async report() {
       const session = getSession();
       const config = session.config;
@@ -419,7 +423,16 @@ export function createDiagnostics({
       ]);
     },
 
-    /** "Show the last real-time messages". */
+    /**
+     * The `diagnostics` action: the overview, or the last real-time
+     * messages (`report: "mqtt"`). Unknown or missing: the overview.
+     * @param {{ report?: string }} [fields]
+     */
+    run(fields = {}) {
+      return fields?.report === DIAGNOSTIC_REPORTS.MQTT ? this.mqttDebug() : this.report();
+    },
+
+    /** The last real-time messages (debug buffer). */
     mqttDebug() {
       return formatDebugMessages(buffer.entries(DEBUG_SHOWN), {
         received: buffer.received,

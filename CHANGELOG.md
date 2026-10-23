@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Diagnostics report** button: integration and Frigate versions, mode,
+- **Diagnostics** button, report **Overview**: integration and Frigate versions, mode,
   real-time feed (broker or WebSocket, state, age of the last message,
   flapping), cameras (camera / detection / skipped fps, `status/<role>`),
   detectors (type, inference speed, stuck detection), storage (recordings,
@@ -17,7 +17,7 @@ All notable changes to this project are documented here. The format follows
   hardware), detector, retention, generated `config.yml`, whether the admin
   password is set and the resource advice. No password, token or cookie in
   it.
-- **Show the last real-time messages** button: the last 50 of the 200 MQTT
+- **Diagnostics** button, report **Last real-time messages**: the last 50 of the 200 MQTT
   or WebSocket messages kept in memory, newest first, payloads cut at 2000
   characters, images shown as `[binary, N bytes]`, credentials masked.
 - Managed mode: resource advice (shared memory 256 MB + 64 MB per extra

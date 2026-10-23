@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------------
 // In-memory ring buffer of the last real-time messages (MQTT or Frigate
-// WebSocket), for the "Show the last real-time messages" button: what Frigate
+// WebSocket), for the "Last real-time messages" report of the Diagnostics button: what Frigate
 // actually sends, without a broker client at hand.
 //
 //   - 200 messages at most, the oldest dropped first;

@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { DEFAULT_CONFIG, DETECTORS, GPU_VENDORS, MODES } from '../src/config.js';
 import { SOURCE_TYPES } from '../src/frigate/proposal.js';
+import { DIAGNOSTIC_REPORTS } from '../src/gladys/diagnostics.js';
 import {
   CONTAINER_LIMITS,
   CONTAINER_NAME,
@@ -99,7 +100,6 @@ test('manifest action keys are frozen', () => {
     'restart_frigate',
     'show_credentials',
     'diagnostics',
-    'mqtt_debug',
     'propose_camera',
   ]);
 });
@@ -108,6 +108,20 @@ test('manifest action keys are frozen', () => {
 // of server/lib/external-integration/constants.js).
 test('the manifest stays within the 10 actions the core accepts', () => {
   assert.ok(manifest.actions.length <= 10, `${manifest.actions.length} actions`);
+});
+
+test('the diagnostics action offers the reports the code knows, overview first', () => {
+  const action = manifest.actions.find((a) => a.key === MANIFEST_ACTIONS.DIAGNOSTICS);
+  assert.equal(action.fields.length, 1);
+  const [report] = action.fields;
+  assert.equal(report.key, 'report');
+  assert.equal(report.type, 'select');
+  assert.equal(report.default, DIAGNOSTIC_REPORTS.OVERVIEW);
+  assert.deepEqual(
+    report.options.map((o) => o.value),
+    Object.values(DIAGNOSTIC_REPORTS),
+  );
+  for (const option of report.options) assert.ok(option.label.en && option.label.fr);
 });
 
 test('the catalog proposal offers the source types the code knows', () => {

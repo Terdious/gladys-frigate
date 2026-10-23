@@ -335,7 +335,7 @@ test('the report is capped in lines', async () => {
   assert.match(answer.fr, /… \(rapport raccourci\)$/);
 });
 
-test('the debug button lists the messages recorded through the raw tap', () => {
+test('the mqtt report lists the messages recorded through the raw tap', async () => {
   const session = fakeSession(
     { frigate_url: 'https://x:8971' },
     {
@@ -351,7 +351,7 @@ test('the debug button lists the messages recorded through the raw tap', () => {
   diagnostics.recordRaw('available', 'online');
   diagnostics.recordRaw('front/person', 1);
   diagnostics.recordRaw('events', { type: 'new', after: { id: 'a', token: 'jwt.token.value' } });
-  const answer = diagnostics.mqttDebug();
+  const answer = await diagnostics.run({ report: 'mqtt' });
   const [head, , ...rows] = answer.en.split('\n');
   assert.match(head, /^Last 3 of 3 real-time messages since the start \(Frigate WebSocket\)/);
   assert.deepEqual(rows, [
@@ -360,6 +360,10 @@ test('the debug button lists the messages recorded through the raw tap', () => {
     '14:02:12 available online',
   ]);
   assertNoSecret(answer);
+  // The overview is the default report, and the answer for an unknown one.
+  for (const fields of [undefined, {}, { report: 'overview' }, { report: 'weird' }]) {
+    assert.match((await diagnostics.run(fields)).en, /^Frigate integration diagnostics, /);
+  }
 });
 
 test('the proposal button answers a GitHub link without secret, or asks for the names', async () => {

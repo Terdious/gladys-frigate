@@ -62,13 +62,13 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   Frigate UI; it sets Frigate's admin password ("Show the Frigate
   credentials") and talks to Frigate on its internal port 5000. Cameras are
   added in the Frigate UI until camera management (0.5.0).
-- **Diagnostics** (0.7.0, issues #10, #11): a **Diagnostics report** button
-  (versions, feed, cameras, detectors, storage, pinned certificates, the
-  managed container and its resource advice — shm and RAM per camera
-  against the sandbox limits), **Show the last real-time messages** (ring
-  buffer of 200, payloads cut at 2000 characters) and **Propose a camera to
-  the catalog** (a pre-filled GitHub issue link the user opens). No secret
-  in any answer.
+- **Diagnostics** (0.7.0, issues #10, #11): a **Diagnostics** button with
+  two reports — the overview (versions, feed, cameras, detectors, storage,
+  pinned certificates, the managed container and its resource advice — shm
+  and RAM per camera against the sandbox limits) and the last real-time
+  messages (ring buffer of 200, payloads cut at 2000 characters) — and
+  **Propose a camera to the catalog** (a pre-filled GitHub issue link the
+  user opens). No secret in any answer.
 
 Out of scope for now: faces and plates, classification, widgets, profiles,
 multiple Frigate instances, camera management from Gladys (see
@@ -118,7 +118,7 @@ src/gladys/       thin adapter to the Gladys SDK
   statePublisher.js dedupe, batches, rate limit of the states sent to Gladys
   transports.js     per-camera badge (unreachable / degraded), debounced
   sceneEvents.js    transitions -> scene triggers; attach_event_snapshot action
-  diagnostics.js    the diagnostics, debug and catalog proposal buttons (read-only)
+  diagnostics.js    the diagnostics (overview, last messages) and catalog buttons (read-only)
   messages.js       user-facing texts (en/fr) for errors, certificates, accounts
   keys.js           frozen manifest keys (scene triggers / actions)
   status.js         connection status message (errors and security warnings)

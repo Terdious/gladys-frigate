@@ -488,10 +488,10 @@ The connection status at the top of the Configuration tab says what is wrong;
 
 ### Diagnostics buttons
 
-Three buttons of the Configuration tab help when asking for help (forum,
-GitHub issue):
+Two buttons of the Configuration tab help when asking for help (forum,
+GitHub issue). **Diagnostics** has a **Report** choice:
 
-- **Diagnostics report**: one text with the integration and Frigate
+- **Diagnostics**, report **Overview** (the default): one text with the integration and Frigate
   versions, the mode, whether Frigate answers, the real-time feed (MQTT
   broker or Frigate WebSocket, its state, the age of the last message,
   whether Frigate keeps dropping its broker connection), each camera (camera,
@@ -503,7 +503,8 @@ GitHub issue):
   and detected), the detector chosen, the retention, where the generated
   `config.yml` is, whether the admin password is set (yes or no, never the
   password) and the resource advice below.
-- **Show the last real-time messages**: the last 50 messages Frigate sent
+- **Diagnostics**, report **Last real-time messages (MQTT / WebSocket)**:
+  the last 50 messages Frigate sent
   (out of the last 200 kept in memory since the integration started),
   newest first, as `HH:MM:SS topic payload` in UTC. Payloads are cut at 2000
   characters and images show as `[binary, N bytes]`. Handy to check that

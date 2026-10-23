@@ -556,26 +556,41 @@
     {
       "key": "diagnostics",
       "label": {
-        "en": "Diagnostics report",
-        "fr": "Rapport de diagnostic"
+        "en": "Diagnostics",
+        "fr": "Diagnostic"
       },
       "description": {
-        "en": "Versions, real-time feed, cameras, detectors, storage, certificates and the Frigate container, to share in a support request (no password inside).",
-        "fr": "Versions, flux temps réel, caméras, détecteurs, stockage, certificats et conteneur Frigate, à partager dans une demande d'aide (sans mot de passe)."
+        "en": "Overview (versions, real-time feed, cameras, detectors, storage, certificates, Frigate container) to share in a support request, or the last 50 real-time messages. No password inside.",
+        "fr": "Vue d'ensemble (versions, flux temps réel, caméras, détecteurs, stockage, certificats, conteneur Frigate) à partager dans une demande d'aide, ou les 50 derniers messages temps réel. Sans mot de passe."
       },
-      "timeout_seconds": 30
-    },
-    {
-      "key": "mqtt_debug",
-      "label": {
-        "en": "Show the last real-time messages",
-        "fr": "Afficher les derniers messages temps réel"
-      },
-      "description": {
-        "en": "The last 50 messages received from Frigate (MQTT or WebSocket), newest first.",
-        "fr": "Les 50 derniers messages reçus de Frigate (MQTT ou WebSocket), du plus récent au plus ancien."
-      },
-      "timeout_seconds": 10
+      "timeout_seconds": 30,
+      "fields": [
+        {
+          "key": "report",
+          "type": "select",
+          "label": {
+            "en": "Report",
+            "fr": "Rapport"
+          },
+          "default": "overview",
+          "options": [
+            {
+              "value": "overview",
+              "label": {
+                "en": "Overview",
+                "fr": "Vue d'ensemble"
+              }
+            },
+            {
+              "value": "mqtt",
+              "label": {
+                "en": "Last real-time messages (MQTT / WebSocket)",
+                "fr": "Derniers messages temps réel (MQTT / WebSocket)"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "key": "propose_camera",

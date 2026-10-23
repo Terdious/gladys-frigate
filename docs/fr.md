@@ -527,10 +527,10 @@ passe ni de jeton.
 
 ### Boutons de diagnostic
 
-Trois boutons de l'onglet Configuration aident à demander de l'aide (forum,
-ticket GitHub) :
+Deux boutons de l'onglet Configuration aident à demander de l'aide (forum,
+ticket GitHub). **Diagnostic** propose un choix de **Rapport** :
 
-- **Rapport de diagnostic** : un texte avec les versions de l'intégration et
+- **Diagnostic**, rapport **Vue d'ensemble** (par défaut) : un texte avec les versions de l'intégration et
   de Frigate, le mode, si Frigate répond, le flux temps réel (broker MQTT ou
   WebSocket de Frigate, son état, l'âge du dernier message, si Frigate perd
   sans cesse sa connexion au broker), chaque caméra (images par seconde de
@@ -543,7 +543,8 @@ ticket GitHub) :
   la conservation, l'emplacement du `config.yml` généré, si le mot de passe
   admin est défini (oui ou non, jamais le mot de passe) et le conseil de
   ressources ci-dessous.
-- **Afficher les derniers messages temps réel** : les 50 derniers messages
+- **Diagnostic**, rapport **Derniers messages temps réel (MQTT /
+  WebSocket)** : les 50 derniers messages
   envoyés par Frigate (parmi les 200 derniers gardés en mémoire depuis le
   démarrage de l'intégration), du plus récent au plus ancien, sous la forme
   `HH:MM:SS topic contenu` en UTC. Les contenus sont coupés à 2000

@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------------
-// Pure formatters of the "Diagnostics report" and "Show the last real-time
-// messages" buttons.
+// Pure formatters of the two reports of the "Diagnostics" button: the
+// overview and the last real-time messages.
 //
 // Gladys shows an action result as plain text with its line breaks kept
 // (`white-space: pre-wrap`), in a scrolling box: the report is made of short
@@ -15,7 +15,7 @@
 /** The report stays readable in the Gladys result box. */
 export const MAX_REPORT_LINES = 60;
 export const MAX_LISTED_CAMERAS = 10;
-/** Messages shown by "Show the last real-time messages". */
+/** Messages shown by the "Last real-time messages" report. */
 export const DEBUG_SHOWN = 50;
 /** Characters per language of the debug answer (50 × 2000 would be 100 KB). */
 export const MAX_DEBUG_TEXT_LENGTH = 20_000;
@@ -244,7 +244,7 @@ export function containerLine(entry, nowMs) {
 }
 
 /**
- * The answer of "Show the last real-time messages": `HH:MM:SS topic payload`,
+ * The "Last real-time messages" report: `HH:MM:SS topic payload`,
  * newest first, at most `limit` messages and MAX_DEBUG_TEXT_LENGTH characters.
  * @param {Array<{ topic: string, payload: string, received_at: string }>} entries newest first
  * @param {object} options

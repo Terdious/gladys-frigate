@@ -146,8 +146,7 @@ gladys.onAction(MANIFEST_ACTIONS.START_FRIGATE, () => session.startFrigate());
 gladys.onAction(MANIFEST_ACTIONS.STOP_FRIGATE, () => session.stopFrigate());
 gladys.onAction(MANIFEST_ACTIONS.RESTART_FRIGATE, () => session.restartFrigate());
 gladys.onAction(MANIFEST_ACTIONS.SHOW_CREDENTIALS, () => session.showCredentials());
-gladys.onAction(MANIFEST_ACTIONS.DIAGNOSTICS, () => diagnostics.report());
-gladys.onAction(MANIFEST_ACTIONS.MQTT_DEBUG, () => diagnostics.mqttDebug());
+gladys.onAction(MANIFEST_ACTIONS.DIAGNOSTICS, (fields) => diagnostics.run(fields));
 gladys.onAction(MANIFEST_ACTIONS.PROPOSE_CAMERA, (fields) => diagnostics.proposeCamera(fields));
 // The user changed the hardware grants of the sub-container: new detector.
 gladys.onHardwareUpdated((containers) => session.hardwareUpdated(containers));
