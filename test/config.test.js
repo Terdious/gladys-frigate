@@ -134,6 +134,32 @@ test('the MQTT host is a bare host name or IP address', () => {
   }
 });
 
+test('the live view options: trimmed host, clamped port, 8554 by default', () => {
+  assert.equal(
+    normalizeConfig({ live_rtsp_host: ' 192.168.1.20 ' }).live_rtsp_host,
+    '192.168.1.20',
+  );
+  assert.equal(normalizeConfig({ live_rtsp_port: '' }).live_rtsp_port, 8554);
+  assert.equal(normalizeConfig({ live_rtsp_port: 99999 }).live_rtsp_port, 65535);
+  assert.equal(normalizeConfig({ live_rtsp_port: '18554' }).live_rtsp_port, 18554);
+});
+
+test('the live view host is a bare host name or IP address, without credentials', () => {
+  const check = (live_rtsp_host) => validateConfig(normalizeConfig({ ...BASE, live_rtsp_host }));
+  for (const host of [
+    'rtsp://frigate',
+    'frigate:8554',
+    'frigate/front',
+    'user:pw@frigate',
+    '[fe80::1]:8554',
+  ]) {
+    assert.match(check(host)?.en ?? '', /live view RTSP host/, host);
+  }
+  for (const host of ['', 'frigate', 'frigate.lan', '192.168.1.10', 'fe80::1', '[fe80::1]']) {
+    assert.equal(check(host), null, host);
+  }
+});
+
 test('the MQTT topic prefix refuses wildcards', () => {
   const error = validateConfig(
     normalizeConfig({ ...BASE, mqtt_host: 'broker', mqtt_topic_prefix: 'frigate/#' }),

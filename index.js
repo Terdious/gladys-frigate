@@ -16,6 +16,7 @@ import { cameraNameOfDevice, publishDiscovery } from './src/gladys/discovery.js'
 import { createFrigateSession } from './src/gladys/frigateSession.js';
 import { createCameraImages, createDeviceImages } from './src/gladys/images.js';
 import { MANIFEST_ACTIONS, SCENE_ACTIONS } from './src/gladys/keys.js';
+import { resolveLiveRtsp } from './src/gladys/live.js';
 import { describeTransition } from './src/gladys/messages.js';
 import { createSceneEvents, createSnapshotAction } from './src/gladys/sceneEvents.js';
 
@@ -26,8 +27,19 @@ const trustStore = new TrustStore({ filePath: join(dataDir, 'tls-trust.json'), l
 const gladys = new GladysIntegration();
 // The device side reads the session lazily (the arrows run after start-up).
 const zoneSensors = () => session.config?.zone_sensors === true;
+// Managed-mode hook: the host port Gladys assigned to the `frigate_rtsp` port
+// of the Frigate sub-container (read from `getContainers`). The managed-mode
+// code replaces this getter; until then the port is unknown, so a managed
+// configuration publishes no live URL (remote mode needs no port from Gladys).
+const managedLiveHostPort = () => null;
+// The live URL is resolved on every publication: Gladys upserts the params of
+// already-created devices, so a new host or port reaches them.
 const discover = (capabilities) =>
-  publishDiscovery(gladys, capabilities, { zoneSensors: zoneSensors(), logger });
+  publishDiscovery(gladys, capabilities, {
+    zoneSensors: zoneSensors(),
+    logger,
+    liveRtsp: resolveLiveRtsp(session.config, { managedHostPort: managedLiveHostPort() }),
+  });
 
 const cameraImages = createCameraImages({
   getClient: () => session.client,

@@ -13,6 +13,8 @@
 //   - motion; per tracked object a presence sensor and a counter, plus the
 //     total of objects; the review status (none / detection / alert);
 //   - with the "zone sensors" option, one presence sensor per zone and object;
+//   - when the live RTSP restream is known, the `CAMERA_URL` param the core
+//     `rtsp-camera` service streams from (live view, see src/gladys/live.js);
 //   - for a camera Frigate drives over ONVIF: a `move` command (the movements
 //     it supports, as `supported_options`) and a `preset` command (its ONVIF
 //     presets), rendered as a pad by the dashboard Camera widget.
@@ -22,6 +24,7 @@
 
 import { DEVICE_FEATURE_CATEGORIES, DEVICE_FEATURE_TYPES } from '@gladysassistant/integration-sdk';
 import { CAMERA_MOVE, supportedMoves } from '../frigate/ptz.js';
+import { LIVE_PARAM, liveRtspUrl } from './live.js';
 
 export const DEVICE_TYPE = 'camera';
 export const CAMERA_PARAM = 'FRIGATE_CAMERA';
@@ -168,11 +171,21 @@ function ptzFeatures(id, camera) {
 }
 
 /**
+ * @typedef {object} DiscoveryOptions
+ * @property {boolean} [zoneSensors] one presence sensor per zone and object
+ * @property {{ host: string, port: number } | null} [liveRtsp] where the
+ *   go2rtc restream is reached from Gladys (`resolveLiveRtsp()`); without it,
+ *   no `CAMERA_URL` param is published
+ * @property {{ warn: Function }} [logger] told when the core refuses the PTZ
+ *   feature types
+ */
+
+/**
  * @param {{ externalIds: Function }} gladys SDK instance (id helpers only)
  * @param {object} camera from capabilities
- * @param {{ zoneSensors?: boolean }} [options]
+ * @param {DiscoveryOptions} [options]
  */
-export function buildCameraDevice(gladys, camera, { zoneSensors = false } = {}) {
+export function buildCameraDevice(gladys, camera, { zoneSensors = false, liveRtsp = null } = {}) {
   const ids = gladys.externalIds(DEVICE_TYPE, camera.name);
   const id = ids.feature;
   const features = [
@@ -242,7 +255,11 @@ export function buildCameraDevice(gladys, camera, { zoneSensors = false } = {}) 
     }
   }
   features.push(...ptzFeatures(id, camera));
+  // FRIGATE_CAMERA stays first: it identifies the camera of the device.
   const params = [{ name: CAMERA_PARAM, value: camera.name }];
+  if (liveRtsp) {
+    params.push({ name: LIVE_PARAM, value: liveRtspUrl(liveRtsp, camera.name) });
+  }
   if (features.some((feature) => feature.type === DEVICE_FEATURE_TYPES.CAMERA.PRESET)) {
     params.push({ name: PTZ_PRESETS_PARAM, value: JSON.stringify(camera.ptz.presets) });
   }
@@ -256,7 +273,12 @@ export function buildCameraDevice(gladys, camera, { zoneSensors = false } = {}) 
   };
 }
 
-/** The complete discovery list of a Frigate instance. */
+/**
+ * The complete discovery list of a Frigate instance.
+ * @param {{ externalIds: Function }} gladys
+ * @param {object | null} capabilities
+ * @param {DiscoveryOptions} [options]
+ */
 export function buildDevices(gladys, capabilities, options) {
   return (capabilities?.cameras ?? []).map((camera) => buildCameraDevice(gladys, camera, options));
 }
@@ -330,7 +352,7 @@ const isUnknownType = (err) => err?.status === 400 && /unknown type/i.test(err.m
  * that the cameras stay discoverable.
  * @param {{ externalIds: Function, publishDiscoveredDevices: Function }} gladys
  * @param {object | null} capabilities null = Frigate not reachable: empty list
- * @param {{ zoneSensors?: boolean, logger?: { warn: Function } }} [options]
+ * @param {DiscoveryOptions} [options]
  * @returns {Promise<number>} number of cameras listed
  */
 export async function publishDiscovery(gladys, capabilities, options = {}) {

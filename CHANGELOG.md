@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Live view: the ⏵ button of the dashboard Camera widget plays a Frigate
+  camera, at home and through Gladys Plus. Each camera device now carries the
+  address of the Frigate go2rtc restream (`rtsp://<Frigate host>:8554/<camera>`),
+  which Gladys converts to HLS like its own RTSP cameras; existing devices
+  get it at the next connection, without being recreated. Two new options set
+  the RTSP host and port when the restream is not on the Frigate host or on
+  port 8554. In remote mode, port 8554 of Frigate must be reachable from the
+  Gladys machine.
 - PTZ cameras: a camera with an `onvif` section in Frigate gets a `move`
   feature (pan, tilt, zoom: only the movements it supports, read from
   Frigate's `/api/<camera>/ptz/info`) and a `preset` feature (its ONVIF

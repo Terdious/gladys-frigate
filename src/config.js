@@ -23,6 +23,10 @@ export const DEFAULT_CONFIG = Object.freeze({
   min_score: 70,
   trigger_cooldown: 30,
   zone_sensors: false,
+  // Live view (go2rtc RTSP restream of Frigate). A blank host means the host
+  // of the Frigate URL, or 127.0.0.1 in managed mode (src/gladys/live.js).
+  live_rtsp_host: '',
+  live_rtsp_port: 8554,
   // Expert TLS settings, both optional. Without them, a certificate signed by
   // a public authority is verified normally and a self-signed one (Frigate's
   // default on port 8971) is trusted on first use, then pinned.
@@ -94,6 +98,8 @@ export function normalizeConfig(raw = {}) {
     min_score: integer(raw.min_score, DEFAULT_CONFIG.min_score, 0, 100),
     trigger_cooldown: integer(raw.trigger_cooldown, DEFAULT_CONFIG.trigger_cooldown, 0, 3600),
     zone_sensors: raw.zone_sensors === true,
+    live_rtsp_host: text(raw.live_rtsp_host),
+    live_rtsp_port: integer(raw.live_rtsp_port, DEFAULT_CONFIG.live_rtsp_port, 1, 65535),
     tls_fingerprint: normalizeFingerprint(raw.tls_fingerprint),
     tls_ca: normalizePem(raw.tls_ca),
   };
@@ -110,6 +116,16 @@ function parseUrl(value) {
   } catch {
     return null;
   }
+}
+
+/**
+ * A host name or an IP address alone ("mqtt://broker" or "broker:1883" would
+ * only fail later, at connection time). A single colon followed by digits is
+ * a port; IPv6 addresses have several.
+ * @param {string} host
+ */
+function isBareHost(host) {
+  return !/[\s/]/.test(host) && !/^[^:]+:\d+$/.test(host);
 }
 
 /**
@@ -171,15 +187,19 @@ export function validateConfig(config, raw = {}) {
       fr: "Renseignez soit l'empreinte du certificat, soit l'autorité de certification, pas les deux.",
     };
   }
-  // "mqtt://broker" or "broker:1883" would only fail later, at connection time.
-  // A single colon followed by digits is a port; IPv6 addresses have several.
-  if (
-    usesMqtt(config) &&
-    (/[\s/]/.test(config.mqtt_host) || /^[^:]+:\d+$/.test(config.mqtt_host))
-  ) {
+  if (usesMqtt(config) && !isBareHost(config.mqtt_host)) {
     return {
       en: 'The MQTT broker host must be a host name or an IP address only, without mqtt://, port or path.',
       fr: "L'hôte du broker MQTT doit être un nom d'hôte ou une adresse IP seuls, sans mqtt://, port ni chemin.",
+    };
+  }
+  // Same rule for the live view host, which ends up in rtsp://<host>:<port>/<camera>,
+  // plus no credentials ("user:pw@host") and no port after a bracketed IPv6.
+  const liveHost = config.live_rtsp_host;
+  if (liveHost && (!isBareHost(liveHost) || /@|\]:\d+$/.test(liveHost))) {
+    return {
+      en: 'The live view RTSP host must be a host name or an IP address only, without rtsp://, port or path.',
+      fr: "L'hôte RTSP de la vidéo en direct doit être un nom d'hôte ou une adresse IP seuls, sans rtsp://, port ni chemin.",
     };
   }
   if (usesMqtt(config) && /[+#\s]/.test(config.mqtt_topic_prefix)) {

@@ -48,6 +48,11 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
   pinned (with a "Trust the new certificate" button); expert pinned
   fingerprint or custom CA; no secret
   in logs or URLs.
+- **Live view** (0.6.0, issue #7): the ⏵ button of the dashboard Camera
+  widget, locally and through Gladys Plus. Each camera device carries a
+  `CAMERA_URL` param pointing at the Frigate go2rtc restream
+  (`rtsp://<host>:8554/<camera>`), which the core `rtsp-camera` service turns
+  into encrypted HLS: no core change, no video through this container.
 
 Out of scope for now: faces and plates, classification, widgets, profiles,
 multiple Frigate instances, sub-containers (see [`ROADMAP.md`](./ROADMAP.md)).
@@ -76,6 +81,7 @@ src/gladys/       thin adapter to the Gladys SDK
   frigateSession.js connection lifecycle, real-time feed, status, the three buttons,
                     resync when Frigate is back, MQTT flapping report
   discovery.js      Frigate cameras -> Gladys devices (Discover tab)
+  live.js           live view: go2rtc restream URL (CAMERA_URL param), both modes
   images.js         camera images (resized by Frigate): 60 KB stored, 150 KB live
   deviceSync.js     states, commands (confirmed by Frigate), PTZ (1.5 s watchdog), polls, badges
   cameraStates.js   typed messages -> feature states
