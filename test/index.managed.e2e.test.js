@@ -83,15 +83,14 @@ test('index.js, managed mode: start, connect, admin, live URL, hardware, stop', 
     return result.data.message;
   };
 
-  // 1. Not started: the status says which button to press.
-  await step('the "not started" status', () => /Start Frigate/.test(lastStatus()?.message?.en));
-  assert.equal(lastStatus().connected, false);
-  assert.equal(gladys.posts('/container/frigate/start').length, 0, 'never started on its own');
+  // 1. The managed mode saved for the first time starts Frigate by itself:
+  //    config.yml generated in the sub-container volume, then started.
+  await step('the first start', () => gladys.posts('/container/frigate/start').length === 1);
+  assert.deepEqual(gladys.posts('/container/frigate/start')[0].body, { env: {} });
 
-  // 2. Start: config.yml generated in the sub-container volume, then started.
+  // 2. The Start button works too (a stopped Frigate, or a second try).
   const started = await action('start_frigate');
   assert.match(started.en, /Frigate is starting/);
-  assert.deepEqual(gladys.posts('/container/frigate/start')[0].body, { env: {} });
   const config = parse(
     await readFile(join(dataDir, 'containers', 'frigate', 'config', 'config.yml'), 'utf8'),
   );
@@ -99,11 +98,16 @@ test('index.js, managed mode: start, connect, admin, live URL, hardware, stop', 
   assert.deepEqual(config.mqtt, { enabled: false });
 
   // 3. Connected over the internal port; the real-time feed is the WebSocket.
-  await step('the connected status', () =>
-    /Frigate WebSocket connected/.test(lastStatus()?.message?.en ?? ''),
-  );
-  assert.equal(lastStatus().connected, true);
-  assert.match(lastStatus().message.en, /installed by Gladys/);
+  //    Read once the status settles: the second start goes through
+  //    "starting…" again before reconnecting.
+  const connectedStatus = () => {
+    const status = lastStatus();
+    return status?.connected === true && /Frigate WebSocket connected/.test(status.message?.en)
+      ? status
+      : null;
+  };
+  await step('the connected status', () => connectedStatus() !== null);
+  assert.match(connectedStatus().message.en, /installed by Gladys/);
 
   // 4. The live URL uses the host port Gladys assigned to the RTSP restream.
   const rtspPort = gladys.containers[0].ports[1].host_port;
