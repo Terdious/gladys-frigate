@@ -18,6 +18,15 @@ All notable changes to this project are documented here. The format follows
   the answer of the Cameras button says which account the controls use.
   Not available in remote mode (Gladys does not know the camera address).
 
+### Changed
+
+- Managed mode: the "has not answered" and "does not stay up" statuses point
+  to the Logs tab of the `frigate` container and name the two sandbox
+  symptoms seen on a real machine (`chown: Operation not permitted`,
+  `pthread_create() failed`); the documentation explains them and the two
+  core changes that lift them. The "Coral USB detected" sentence says that
+  Gladys only sees a USB bus, not a Coral.
+
 ## [0.5.0] - 2026-10-23
 
 ### Added

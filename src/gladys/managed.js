@@ -98,8 +98,8 @@ export const MANAGED_TEXT = Object.freeze({
     fr: 'Le conteneur Frigate est en cours de démarrage (ou de redémarrage) par Gladys…',
   },
   CRASH_LOOP: {
-    en: 'Frigate does not stay up: its container keeps stopping. The limits of the Gladys sandbox (100 processes, a 64 MB /tmp, no capabilities) may block it: see "Frigate does not stay up" in the documentation, or use an existing Frigate instance (remote mode).',
-    fr: "Frigate ne reste pas démarré : son conteneur s'arrête sans cesse. Les limites du bac à sable de Gladys (100 processus, /tmp de 64 Mo, aucune capability) peuvent le bloquer : voir « Frigate ne reste pas démarré » dans la documentation, ou utilisez une instance Frigate existante (mode distant).",
+    en: 'Frigate does not stay up: its container keeps stopping. The limits of the Gladys sandbox (no Linux capabilities, 100 processes, a 64 MB /tmp) block it: check Logs → container "frigate" and see "When Frigate does not stay up" in the documentation, or use an existing Frigate instance (remote mode).',
+    fr: "Frigate ne reste pas démarré : son conteneur s'arrête sans cesse. Les limites du bac à sable de Gladys (aucune capability Linux, 100 processus, /tmp de 64 Mo) le bloquent : regardez Journaux → conteneur « frigate » et voir « Frigate ne reste pas démarré » dans la documentation, ou utilisez une instance Frigate existante (mode distant).",
   },
   ADMIN_PENDING: {
     en: 'The Frigate admin password could not be set yet (tried again at the next connection).',
@@ -110,8 +110,8 @@ export const MANAGED_TEXT = Object.freeze({
 /** Frigate's container runs, but its API has not answered for `minutes`. */
 export function notAnswering(minutes) {
   return {
-    en: `The Frigate container runs, but Frigate has not answered for ${minutes} min. Press "Restart Frigate"; if it persists, see "Frigate does not stay up" in the documentation (sandbox limits).`,
-    fr: `Le conteneur Frigate tourne, mais Frigate ne répond pas depuis ${minutes} min. Cliquez sur « Redémarrer Frigate » ; si cela persiste, voir « Frigate ne reste pas démarré » dans la documentation (limites du bac à sable).`,
+    en: `The Frigate container runs, but Frigate has not answered for ${minutes} min. Open Logs → container "frigate": "chown: Operation not permitted" or "pthread_create() failed" means the Gladys sandbox blocks Frigate (no Linux capabilities, 100 processes): see "When Frigate does not stay up" in the documentation. Otherwise press "Restart Frigate".`,
+    fr: `Le conteneur Frigate tourne, mais Frigate ne répond pas depuis ${minutes} min. Ouvrez Journaux → conteneur « frigate » : « chown: Operation not permitted » ou « pthread_create() failed » signifie que le bac à sable de Gladys bloque Frigate (aucune capability Linux, 100 processus) : voir « Frigate ne reste pas démarré » dans la documentation. Sinon, cliquez sur « Redémarrer Frigate ».`,
   };
 }
 
@@ -176,6 +176,13 @@ export function describeDetector(decision, { customDetectors = false } = {}) {
       parts.push({
         en: `The ${choice.en} detector was chosen, but its hardware is not usable: automatic choice applied.`,
         fr: `Le détecteur ${choice.fr} est choisi, mais son matériel n'est pas utilisable : choix automatique appliqué.`,
+      });
+    } else if (note.code === 'not_granted' && note.class === 'coral-usb') {
+      // Gladys reports the class present as soon as a USB bus exists: it
+      // cannot tell a Coral from any other USB device.
+      parts.push({
+        en: 'Gladys reports a USB bus a Coral could use (it cannot tell whether a Coral is plugged in): grant "Coral USB" in the Hardware block only if you have one.',
+        fr: "Gladys signale un bus USB utilisable par un Coral (il ne peut pas savoir si un Coral est branché) : n'accordez « Coral USB » dans le bloc Matériel que si vous en avez un.",
       });
     } else if (note.code === 'not_granted') {
       parts.push({
