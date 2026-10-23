@@ -11,6 +11,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
+import { DLINK_ADMIN, startFakeDlink } from './helpers/fakeDlink.js';
 import { startFakeFrigate } from './helpers/fakeFrigate.js';
 import { startFakeGladys } from './helpers/fakeGladys.js';
 import { waitFor } from './helpers/waitFor.js';
@@ -243,8 +244,72 @@ test('index.js, managed mode: the Cameras button adds, lists, edits and removes 
   assert.match(removed.en, /removed from Frigate/);
   assert.equal((await configFile()).cameras.driveway, undefined);
   assert.equal(restarts(), 3);
+  await step('connected after the removal', () => lastStatus()?.connected === true);
+
+  // A D-Link DCS-5020L named like the camera the fake Frigate reports: its
+  // device gets the D-Link controls, whose commands reach the camera itself.
+  const camera = await startFakeDlink(t);
+  const published = gladys.posts('/discovered_device').length;
+  const desk = await action('camera', {
+    operation: 'add',
+    label: 'Front',
+    model: 'dlink-dcs-5020l',
+    host: '127.0.0.1',
+    port: camera.port,
+    username: 'viewer',
+    password: 'View-Pw',
+    onvif_username: DLINK_ADMIN.username,
+    onvif_password: DLINK_ADMIN.password,
+  });
+  assert.match(desk.en, /control account entered/);
+  const front = () =>
+    gladys.posts('/discovered_device').length > published
+      ? gladys
+          .posts('/discovered_device')
+          .at(-1)
+          .body.devices.find((device) => device.external_id.endsWith(':camera:front'))
+      : null;
+  await step('the D-Link controls in the discovery', () =>
+    front()?.params.some((p) => p.name === 'FRIGATE_CONTROL' && p.value === 'dlink-http'),
+  );
+  const device = front();
+  const nightMode = device.features.find((f) => f.external_id.endsWith(':night-mode'));
+  const move = device.features.find((f) => f.external_id.endsWith(':move'));
+  assert.equal(move.supported_options.length, 4, 'pan and tilt, no zoom');
+  gladys.devices = [device];
+  gladys.send('device-created', { device });
+  const switched = await gladys.command('device.set-value', {
+    device,
+    device_feature: nightMode,
+    value: 1,
+  });
+  assert.equal(switched.success, true, switched.error);
+  const moved = await gladys.command('device.set-value', {
+    device,
+    device_feature: move,
+    value: 2,
+  });
+  assert.equal(moved.success, true, moved.error);
+  assert.deepEqual(
+    camera.requests.map((r) => [r.method, r.url, r.body]),
+    [
+      ['GET', '/daynight.cgi?DayNightMode=3&ConfigReboot=no', ''],
+      [
+        'POST',
+        '/pantiltcontrol.cgi',
+        'PanSingleMoveDegree=5&TiltSingleMoveDegree=5&PanTiltSingleMove=5',
+      ],
+    ],
+  );
+  await step('the night mode state', () =>
+    gladys
+      .posts('/state')
+      .flatMap((r) => r.body.states)
+      .some((s) => s.device_feature_external_id === nightMode.external_id && s.state === 1),
+  );
 
   child.kill('SIGTERM');
   assert.equal(await exited, 0);
   assert.ok(!output.includes('Reo-Secret'), 'the camera password is never logged');
+  assert.ok(!output.includes(DLINK_ADMIN.password), 'nor the D-Link control password');
 });

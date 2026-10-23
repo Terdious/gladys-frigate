@@ -20,6 +20,9 @@
 //     (0600: camera passwords) and are part of every generation of
 //     config.yml; applyCameras() writes it after an add / edit / removal
 //     and restarts a running Frigate when the file changed.
+//   - The same store tells which managed cameras are driven by D-Link HTTP
+//     (pan/tilt, night mode) and where their commands go: controls() for
+//     the discovery, dlinkTarget() for the commands.
 //
 // The connection lifecycle (status, polling while Frigate starts) is in
 // ./frigateSession.js; this module holds the Gladys calls, the files and the
@@ -35,6 +38,7 @@ import { generatePassword, setAdminPassword } from '../frigate/managed/adminAcco
 import { countConfigCameras } from '../frigate/managed/advice.js';
 import { buildCameraConfig, resolveCamera } from '../frigate/managed/cameraSources.js';
 import { createCamerasStore } from '../frigate/managed/camerasStore.js';
+import { dlinkControlsOf, dlinkTargetOf } from '../frigate/dlink.js';
 import { namesInFile, renderConfig, writeConfigFile } from '../frigate/managed/configFile.js';
 import {
   ADMIN_USER,
@@ -461,6 +465,40 @@ export function createManagedFrigate({
 
     /** The store of the cameras managed from Gladys. */
     cameras: camerasStore,
+
+    /**
+     * The D-Link HTTP controls of the managed cameras, by Frigate name
+     * ({ ptz, nightMode }); a record that does not resolve has none.
+     * @returns {Promise<Map<string, { ptz: boolean, nightMode: boolean }>>}
+     */
+    async controls() {
+      const controls = new Map();
+      for (const [name, record] of Object.entries(await camerasStore.cameras())) {
+        try {
+          const found = dlinkControlsOf(resolveCamera(name, record));
+          if (found) controls.set(name, found);
+        } catch {
+          // Unknown model: no controls (the camera action reports it).
+        }
+      }
+      return controls;
+    },
+
+    /**
+     * Where the D-Link controls of a managed camera go (address, HTTP port,
+     * control account); null when it is not managed or has no such control.
+     */
+    async dlinkTarget(name) {
+      const record = await camerasStore.get(name);
+      if (!record) return null;
+      let camera;
+      try {
+        camera = resolveCamera(name, record);
+      } catch {
+        return null;
+      }
+      return dlinkControlsOf(camera) ? dlinkTargetOf(camera) : null;
+    },
 
     /**
      * The camera and go2rtc stream names of config.yml (the cameras added in

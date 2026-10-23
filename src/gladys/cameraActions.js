@@ -26,6 +26,7 @@
 // Thin adapter: the catalog and the sources are in src/frigate/managed/.
 // -----------------------------------------------------------------------------
 
+import { dlinkControlsOf } from '../frigate/dlink.js';
 import { CameraSourceError } from '../frigate/errors.js';
 import {
   BATTERY_WARNING,
@@ -366,6 +367,34 @@ function modelNote(camera) {
   ];
 }
 
+/**
+ * For a model driven by D-Link HTTP (pan/tilt, night mode): which account
+ * the commands use, and a warning when none is set — the control account
+ * falls back to the stream one, often a plain user the camera refuses.
+ * Never a credential.
+ * @param {ReturnType<typeof resolveCamera>} camera
+ * @param {object} record what the user typed
+ */
+function controlNote(camera, record) {
+  if (!dlinkControlsOf(camera)) return null;
+  if (!camera.onvifUsername || !camera.onvifPassword) {
+    return {
+      en: '⚠ No control account: pan/tilt and the night mode (IR) switch will be refused. Edit the camera and enter its ADMIN account as "Control user" and "Control password".',
+      fr: "⚠ Aucun compte de contrôle : le pan/tilt et l'interrupteur de mode nuit (IR) seront refusés. Modifiez la caméra et saisissez son compte ADMIN comme « Utilisateur de contrôle » et « Mot de passe de contrôle ».",
+    };
+  }
+  if (record.onvifUsername === undefined) {
+    return {
+      en: 'Pan/tilt and the night mode (IR) switch use the control account, here the stream account: if it is not the camera ADMIN account, the camera refuses them — then edit the camera with its admin account as "Control user" and "Control password".',
+      fr: "Le pan/tilt et l'interrupteur de mode nuit (IR) utilisent le compte de contrôle, ici celui du flux : si ce n'est pas le compte ADMIN de la caméra, elle les refuse — modifiez alors la caméra avec son compte admin comme « Utilisateur de contrôle » et « Mot de passe de contrôle ».",
+    };
+  }
+  return {
+    en: 'Pan/tilt and the night mode (IR) switch use the control account entered (the camera ADMIN account).',
+    fr: "Le pan/tilt et l'interrupteur de mode nuit (IR) utilisent le compte de contrôle saisi (le compte ADMIN de la caméra).",
+  };
+}
+
 /** The default resolver: the Frigate name ends the device external id ("…:camera:<name>"). */
 const nameFromExternalId = (externalId) =>
   /(?:^|:)camera:([^:]+)$/.exec(String(externalId ?? ''))?.[1] ?? null;
@@ -489,6 +518,7 @@ export function createCameraActions({
         describeStreams(built),
         describeDetection(camera),
         ...modelNote(camera),
+        controlNote(camera, record),
         nextSteps(result),
       ]);
     },
@@ -514,6 +544,7 @@ export function createCameraActions({
         describeStreams(built),
         describeDetection(camera),
         ...modelNote(camera),
+        controlNote(camera, record),
         nextSteps(result),
       ]);
     },

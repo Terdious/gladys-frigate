@@ -17,12 +17,20 @@
 //     `rtsp-camera` service streams from (live view, see src/gladys/live.js);
 //   - for a camera Frigate drives over ONVIF: a `move` command (the movements
 //     it supports, as `supported_options`) and a `preset` command (its ONVIF
-//     presets), rendered as a pad by the dashboard Camera widget.
+//     presets), rendered as a pad by the dashboard Camera widget;
+//   - for a managed camera driven by D-Link HTTP (catalog `dlink-http`, the
+//     DCS-5020L): a `move` command with pan and tilt only (single steps, no
+//     zoom, no preset) and a "Night mode (IR)" switch, plus the
+//     `FRIGATE_CONTROL` param that routes their commands (./deviceSync.js).
+//     Managed mode only: the commands go to the camera itself, whose address
+//     and admin account only the managed cameras store knows.
 // A camera device created with an older version shows "Update" in the
 // Discover tab when features are added (Gladys compares the structure).
 // -----------------------------------------------------------------------------
 
 import { DEVICE_FEATURE_CATEGORIES, DEVICE_FEATURE_TYPES } from '@gladysassistant/integration-sdk';
+import { DLINK_MOVES } from '../frigate/dlink.js';
+import { CONTROL_PROTOCOLS } from '../frigate/managed/catalog.js';
 import { CAMERA_MOVE, supportedMoves } from '../frigate/ptz.js';
 import { LIVE_PARAM, liveRtspUrl } from './live.js';
 
@@ -32,6 +40,11 @@ export const CAMERA_PARAM = 'FRIGATE_CAMERA';
 // a command maps back to its name even before Frigate is read again after a
 // restart. Upserted silently with the options on every publication.
 export const PTZ_PRESETS_PARAM = 'FRIGATE_PTZ_PRESETS';
+// How the commands of a camera reach it when Frigate does not carry them:
+// `dlink-http` (CONTROL_PROTOCOLS). Absent: the `move` / `preset` commands go
+// through Frigate (ONVIF). Upserted silently on every publication, so a
+// camera whose model changes is routed anew without being created again.
+export const CONTROL_PARAM = 'FRIGATE_CONTROL';
 // One of Gladys' DEVICE_POLL_FREQUENCIES (EVERY_MINUTES).
 export const IMAGE_POLL_FREQUENCY_MS = 60_000;
 export const MAX_OBJECT_COUNT = 1000;
@@ -44,6 +57,7 @@ export const FEATURES = Object.freeze({
   OBJECTS: 'objects',
   MOVE: 'move',
   PRESET: 'preset',
+  NIGHT_MODE: 'night-mode',
 });
 
 /** Labels of the `move` options (the dashboard pad shows icons, not these). */
@@ -122,13 +136,15 @@ const counter = (name, externalId) => ({
  * The PTZ features of a camera: none without ONVIF (or when Frigate could
  * not tell what it supports), `move` when it has continuous moves, `preset`
  * when it has presets. Neither keeps history nor echoes a state: they are
- * commands, not positions.
+ * commands, not positions. A D-Link HTTP camera gets its pan and tilt
+ * steps, whatever Frigate says (it has no `onvif` section there).
  * @param {(key: string) => string} id feature external id helper
  * @param {object} camera from capabilities
+ * @param {{ ptz: boolean } | null} controls its D-Link controls
  */
-function ptzFeatures(id, camera) {
+function ptzFeatures(id, camera, controls) {
   const features = [];
-  const moves = supportedMoves(camera.ptz?.features);
+  const moves = controls?.ptz ? [...DLINK_MOVES] : supportedMoves(camera.ptz?.features);
   if (moves.length) {
     features.push({
       name: 'Movement',
@@ -136,7 +152,7 @@ function ptzFeatures(id, camera) {
       category: DEVICE_FEATURE_CATEGORIES.CAMERA,
       type: DEVICE_FEATURE_TYPES.CAMERA.MOVE,
       min: CAMERA_MOVE.STOP,
-      max: CAMERA_MOVE.ZOOM_OUT,
+      max: Math.max(...moves),
       read_only: false,
       has_feedback: false,
       keep_history: false,
@@ -148,7 +164,7 @@ function ptzFeatures(id, camera) {
       })),
     });
   }
-  const presets = camera.ptz?.presets ?? [];
+  const presets = controls?.ptz ? [] : (camera.ptz?.presets ?? []);
   if (presets.length) {
     features.push({
       name: 'Preset',
@@ -171,6 +187,24 @@ function ptzFeatures(id, camera) {
 }
 
 /**
+ * The night mode switch of a D-Link HTTP camera: 1 = infrared forced, 0 =
+ * automatic. The camera sends no state back (no feedback); the command
+ * publishes the state it set. No history: a setting, not a measure.
+ * @param {(key: string) => string} id feature external id helper
+ */
+const nightModeFeature = (id) => ({
+  name: 'Night mode (IR)',
+  external_id: id(FEATURES.NIGHT_MODE),
+  category: DEVICE_FEATURE_CATEGORIES.SWITCH,
+  type: DEVICE_FEATURE_TYPES.SWITCH.BINARY,
+  min: 0,
+  max: 1,
+  read_only: false,
+  has_feedback: false,
+  keep_history: false,
+});
+
+/**
  * @typedef {object} DiscoveryOptions
  * @property {boolean} [zoneSensors] one presence sensor per zone and object
  * @property {{ host: string, port: number } | null} [liveRtsp] where the
@@ -178,6 +212,9 @@ function ptzFeatures(id, camera) {
  *   no `CAMERA_URL` param is published
  * @property {{ warn: Function }} [logger] told when the core refuses the PTZ
  *   feature types
+ * @property {(camera: string) => ({ ptz: boolean, nightMode: boolean } | null)} [controlsOf]
+ *   the D-Link HTTP controls of a managed camera (managed mode only; absent
+ *   or null: none)
  */
 
 /**
@@ -185,8 +222,13 @@ function ptzFeatures(id, camera) {
  * @param {object} camera from capabilities
  * @param {DiscoveryOptions} [options]
  */
-export function buildCameraDevice(gladys, camera, { zoneSensors = false, liveRtsp = null } = {}) {
+export function buildCameraDevice(
+  gladys,
+  camera,
+  { zoneSensors = false, liveRtsp = null, controlsOf = null } = {},
+) {
   const ids = gladys.externalIds(DEVICE_TYPE, camera.name);
+  const controls = controlsOf?.(camera.name) ?? null;
   const id = ids.feature;
   const features = [
     {
@@ -254,7 +296,10 @@ export function buildCameraDevice(gladys, camera, { zoneSensors = false, liveRts
       }
     }
   }
-  features.push(...ptzFeatures(id, camera));
+  features.push(...ptzFeatures(id, camera, controls));
+  if (controls?.nightMode) {
+    features.push(nightModeFeature(id));
+  }
   // FRIGATE_CAMERA stays first: it identifies the camera of the device.
   const params = [{ name: CAMERA_PARAM, value: camera.name }];
   if (liveRtsp) {
@@ -262,6 +307,9 @@ export function buildCameraDevice(gladys, camera, { zoneSensors = false, liveRts
   }
   if (features.some((feature) => feature.type === DEVICE_FEATURE_TYPES.CAMERA.PRESET)) {
     params.push({ name: PTZ_PRESETS_PARAM, value: JSON.stringify(camera.ptz.presets) });
+  }
+  if (controls) {
+    params.push({ name: CONTROL_PARAM, value: CONTROL_PROTOCOLS.DLINK_HTTP });
   }
   return {
     name: camera.friendlyName || camera.name,
@@ -316,6 +364,16 @@ export function presetsOfDevice(device) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The control protocol of a Gladys device (its `FRIGATE_CONTROL` param):
+ * 'dlink-http', or null when its commands go through Frigate.
+ * @returns {string | null}
+ */
+export function controlOfDevice(device) {
+  const param = (device?.params ?? []).find((p) => p.name === CONTROL_PARAM);
+  return typeof param?.value === 'string' && param.value ? param.value : null;
 }
 
 /**

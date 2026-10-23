@@ -193,6 +193,51 @@ test('edit: by the device select; blank keeps, - empties, objects and fps replac
   assert.equal(restarts(gladys), before + 1);
 });
 
+test('a D-Link HTTP model: the answer says which account controls it; the store routes it', async (t) => {
+  const { session, managed } = await running(t);
+  const added = await session.cameras({
+    operation: 'add',
+    label: 'Desk',
+    model: 'dlink-dcs-5020l',
+    host: '192.168.1.50',
+    username: 'viewer',
+    password: 'View-Pw',
+  });
+  assert.match(added.en, /ADMIN account is needed/, 'the note of the model');
+  assert.match(added.en, /here the stream account: if it is not the camera ADMIN account/);
+  assert.match(added.fr, /ici celui du flux : si ce n'est pas le compte ADMIN/);
+  assert.deepEqual(await managed.controls(), new Map([['desk', { ptz: true, nightMode: true }]]));
+  assert.deepEqual(await managed.dlinkTarget('desk'), {
+    host: '192.168.1.50',
+    port: 80,
+    username: 'viewer',
+    password: 'View-Pw',
+  });
+
+  const edited = await session.cameras({
+    operation: 'edit',
+    name: 'desk',
+    onvif_username: 'admin',
+    onvif_password: 'Admin-Pw',
+  });
+  assert.match(edited.en, /use the control account entered \(the camera ADMIN account\)/);
+  assert.ok(!edited.en.includes('Admin-Pw') && !edited.fr.includes('Admin-Pw'));
+  assert.equal((await managed.dlinkTarget('desk')).username, 'admin');
+
+  const emptied = await session.cameras({ operation: 'edit', name: 'desk', onvif_username: '-' });
+  assert.match(
+    emptied.en,
+    /⚠ No control account: pan\/tilt and the night mode \(IR\) switch will be refused/,
+  );
+
+  // Other models: no D-Link control, no such line.
+  const tapo = await session.cameras({ operation: 'add', ...TAPO });
+  assert.doesNotMatch(tapo.en, /control account/);
+  assert.equal((await managed.controls()).has('porch'), false);
+  assert.equal(await managed.dlinkTarget('porch'), null);
+  assert.equal(await managed.dlinkTarget('unknown'), null);
+});
+
 test('edit / remove: the camera must be one added from Gladys', async (t) => {
   const { session, configPath } = await running(t);
   assert.deepEqual(await session.cameras({ operation: 'edit' }), CAMERA_TEXT.TARGET_REQUIRED);

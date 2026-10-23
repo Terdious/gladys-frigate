@@ -41,6 +41,10 @@ handoff notes (historical): [`TODO.md`](./TODO.md).
 - **PTZ** of the cameras Frigate drives over ONVIF: a `move` command (only
   the movements the camera supports, stopped automatically after 1.5 s) and
   a `preset` command (its ONVIF presets), shown by the dashboard widgets.
+- **D-Link HTTP controls** (0.6.0, issue #9, managed mode): a DCS-5020L
+  added from Gladys gets pan/tilt single steps (5°, no zoom) and a
+  "Night mode (IR)" switch, sent to the camera itself with its admin
+  account (control credentials).
 - **Real-time feed** from the Frigate MQTT broker, or from the Frigate
   WebSocket when no broker is configured.
 - **Security**: authenticated port 8971 with a dedicated (viewer) account,
@@ -94,6 +98,7 @@ src/frigate/      Frigate client — NO Gladys dependency (enforced by ESLint)
   capabilities.js   /api/version + /api/config -> normalized cameras & features
                     (+ /api/<camera>/ptz/info for the ONVIF cameras)
   ptz.js            Gladys movement values -> Frigate PTZ payloads, supported moves
+  dlink.js          D-Link HTTP controls: pan/tilt steps, night mode (basic auth, 5 s timeout)
   mqttStream.js     MQTT transport (TLS trust before the CONNECT), shared by the two below
   mqttProbe.js      one-shot broker check ("Test the connection")
   mqttClient.js     real-time feed from the broker: reconnection, resubscription
@@ -125,7 +130,7 @@ src/gladys/       thin adapter to the Gladys SDK
   discovery.js      Frigate cameras -> Gladys devices (Discover tab)
   live.js           live view: go2rtc restream URL (CAMERA_URL param), both modes
   images.js         camera images (resized by Frigate): 60 KB stored, 150 KB live
-  deviceSync.js     states, commands (confirmed by Frigate), PTZ (1.5 s watchdog), polls, badges
+  deviceSync.js     states, commands (confirmed by Frigate), PTZ (1.5 s watchdog), D-Link controls, polls, badges
   cameraStates.js   typed messages -> feature states
   statePublisher.js dedupe, batches, rate limit of the states sent to Gladys
   transports.js     per-camera badge (unreachable / degraded), debounced
