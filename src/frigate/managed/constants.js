@@ -81,5 +81,32 @@ export const OPENVINO_MODEL = Object.freeze({
   labelmap_path: '/openvino-model/coco_91cl_bkgr.txt',
 });
 
+/**
+ * The go2rtc embedded in Frigate restreams every managed camera on its RTSP
+ * port: Frigate's ffmpeg reads it there, so the camera gets one connection
+ * per stream whatever reads it (detection, recording, live view).
+ */
+export const RESTREAM_BASE = 'rtsp://127.0.0.1:8554';
+
+/** Suffix of the go2rtc stream of the secondary (detection) source of a camera. */
+export const SUB_STREAM_SUFFIX = '_sub';
+
+/**
+ * Input arguments validated for the tapo:// producer: its non-monotonic
+ * timestamps make ffmpeg run away without wallclock re-timestamping.
+ */
+export const TAPO_INPUT_ARGS =
+  '-avoid_negative_ts make_zero -fflags +genpts+discardcorrupt -rtsp_transport tcp -use_wallclock_as_timestamps 1';
+
+/**
+ * The tapo:// substream does not expose its size fast enough for Frigate's
+ * probe: the known 640x360 is set explicitly.
+ */
+export const TAPO_DETECT_SIZE = Object.freeze({ width: 640, height: 360 });
+
+/** Detection frames per second of a managed camera (Frigate recommends 5). */
+export const DEFAULT_DETECT_FPS = 5;
+export const MAX_DETECT_FPS = 15;
+
 /** VAAPI video decoding (Intel and AMD render nodes), independent of the detector. */
 export const VAAPI_FFMPEG = Object.freeze({ hwaccel_args: 'preset-vaapi' });

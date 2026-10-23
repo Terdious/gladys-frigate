@@ -108,6 +108,14 @@ const session = createFrigateSession({
     logger.info(describeTransition(transition));
     sceneEvents.handle(transition);
   },
+  // The `source: "devices"` select of the camera buttons gives an external id.
+  cameraOfDevice: (externalId) =>
+    cameraNameOfDevice(
+      gladys,
+      gladys.devices.find((device) => device.external_id === externalId) ?? {
+        external_id: externalId,
+      },
+    ),
 });
 
 const applyConfig = (raw = {}) => session.apply(normalizeConfig(raw), raw);
@@ -139,6 +147,7 @@ gladys.onAction(MANIFEST_ACTIONS.START_FRIGATE, () => session.startFrigate());
 gladys.onAction(MANIFEST_ACTIONS.STOP_FRIGATE, () => session.stopFrigate());
 gladys.onAction(MANIFEST_ACTIONS.RESTART_FRIGATE, () => session.restartFrigate());
 gladys.onAction(MANIFEST_ACTIONS.SHOW_CREDENTIALS, () => session.showCredentials());
+gladys.onAction(MANIFEST_ACTIONS.CAMERA, (fields) => session.cameras(fields));
 // The user changed the hardware grants of the sub-container: new detector.
 gladys.onHardwareUpdated((containers) => session.hardwareUpdated(containers));
 

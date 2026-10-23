@@ -145,3 +145,102 @@ test('index.js, managed mode: start, connect, admin, live URL, hardware, stop', 
   assert.equal(await exited, 0);
   assert.ok(!output.includes(password), 'the admin password is never logged');
 });
+
+test('index.js, managed mode: the Cameras button adds, lists, edits and removes a camera', async (t) => {
+  const frigate = await startFakeFrigate({ account: null, version: '0.18.0-abcdef' });
+  t.after(() => frigate.close());
+  const gladys = await startFakeGladys({
+    config: { mode: 'managed' },
+    containers: [structuredClone(FRIGATE_CONTAINER)],
+  });
+  t.after(() => gladys.close());
+  const dataDir = await mkdtemp(join(tmpdir(), 'gladys-frigate-cameras-e2e-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 5 }));
+
+  const child = spawn(process.execPath, ['index.js'], {
+    cwd: new URL('..', import.meta.url),
+    env: {
+      ...process.env,
+      GLADYS_HOST_API_URL: gladys.url,
+      GLADYS_INTEGRATION_TOKEN: 'test-token',
+      GLADYS_INTEGRATION_SELECTOR: 'frigate',
+      FRIGATE_DATA_DIR: dataDir,
+      FRIGATE_MANAGED_URL: frigate.url,
+      LOG_LEVEL: 'info',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => (output += chunk));
+  child.stderr.on('data', (chunk) => (output += chunk));
+  const exited = new Promise((resolve) => child.on('exit', (code) => resolve(code)));
+  t.after(() => child.kill('SIGKILL'));
+  const step = async (what, condition) => {
+    try {
+      await waitFor(condition, { ...WAIT, what });
+    } catch (err) {
+      throw new Error(`${err.message}\n--- integration output ---\n${output}`, { cause: err });
+    }
+  };
+  const lastStatus = () => gladys.posts('/connection_status').at(-1)?.body;
+  const action = async (key, fields = {}) => {
+    const result = await gladys.command('action.run', { key, fields }, 15_000);
+    assert.equal(result.success, true, `${key}: ${result.error}`);
+    return result.data.message;
+  };
+  const configFile = async () =>
+    parse(await readFile(join(dataDir, 'containers', 'frigate', 'config', 'config.yml'), 'utf8'));
+  const restarts = () => gladys.posts('/container/frigate/restart').length;
+
+  await step('the "not started" status', () => /Start Frigate/.test(lastStatus()?.message?.en));
+  await action('start_frigate');
+  await step('connected', () => lastStatus()?.connected === true);
+
+  // Add: stored, config.yml regenerated, Frigate restarted.
+  const added = await action('camera', {
+    operation: 'add',
+    label: 'Driveway',
+    model: 'reolink-rtsp',
+    host: '192.168.1.40',
+    username: 'admin',
+    password: 'Reo-Secret!1',
+    objects: 'person, car',
+    detect_fps: 5,
+  });
+  assert.match(added.en, /Camera "Driveway" \(driveway\) added to Frigate/);
+  assert.match(added.en, /h264Preview_01_main/);
+  assert.equal(restarts(), 1);
+  const config = await configFile();
+  assert.deepEqual(config.go2rtc.streams.driveway, [
+    'rtsp://admin:Reo-Secret!1@192.168.1.40:554/h264Preview_01_main',
+  ]);
+  assert.deepEqual(config.cameras.driveway.onvif, {
+    host: '192.168.1.40',
+    port: 8000,
+    user: 'admin',
+    password: 'Reo-Secret!1',
+  });
+  await step('connected again after the restart', () => lastStatus()?.connected === true);
+
+  const listed = await action('camera', { operation: 'list' });
+  assert.match(listed.en, /^Cameras added from Gladys \(1\):\n- "Driveway" \(driveway\)/);
+
+  // Edit through the device select, then remove by the typed Frigate name.
+  const edited = await action('camera', {
+    operation: 'edit',
+    camera: 'ext:frigate:camera:driveway',
+    objects: 'person',
+  });
+  assert.match(edited.en, /Camera "Driveway" \(driveway\) updated/);
+  assert.deepEqual((await configFile()).cameras.driveway.objects.track, ['person']);
+  assert.equal(restarts(), 2);
+
+  const removed = await action('camera', { operation: 'remove', name: 'driveway' });
+  assert.match(removed.en, /removed from Frigate/);
+  assert.equal((await configFile()).cameras.driveway, undefined);
+  assert.equal(restarts(), 3);
+
+  child.kill('SIGTERM');
+  assert.equal(await exited, 0);
+  assert.ok(!output.includes('Reo-Secret'), 'the camera password is never logged');
+});

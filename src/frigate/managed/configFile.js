@@ -25,8 +25,15 @@
 //     `snapshots` (retain.default): an explicit Gladys value wins, else the
 //     days already in the file (set in the Frigate UI), else the defaults.
 //
-// The `cameras` and `go2rtc` sections are never touched in this milestone
-// (cameras are added in the Frigate UI until camera management lands).
+//   - the cameras managed from Gladys (/data/managed/cameras.json, built by
+//     ./cameraSources.js): their `go2rtc.streams` entries (`<camera>`,
+//     `<camera>_sub`) and, inside their camera section, `ffmpeg.inputs`,
+//     `detect.fps` (+ the Tapo size), `objects.track`, `friendly_name` and
+//     `onvif` (deleted when no longer generated). Zones, motion masks,
+//     `objects.filters`, review, per-camera record… set in the Frigate UI
+//     are kept. A new managed camera gets its whole section. A camera the
+//     user added in the Frigate UI is never touched; a managed camera the
+//     user removed (`forget`) loses its section and its streams.
 // Frigate 0.14+ writes a `version` key at the top of the file when it
 // migrates it: kept, like every other key.
 //
@@ -40,10 +47,11 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { isMap, isNode, parseDocument } from 'yaml';
+import { isMap, isNode, parse, parseDocument } from 'yaml';
 import { ManagedConfigError } from '../errors.js';
 import {
   DETECTOR_PRESETS,
+  SUB_STREAM_SUFFIX,
   MQTT_CA_FILE,
   MQTT_CA_PATH_IN_FRIGATE,
   MQTT_PASSWORD_ENV,
@@ -163,6 +171,95 @@ function mqttSection(current, mqtt) {
 const isPreset = (value) =>
   Object.values(DETECTOR_PRESETS).some((p) => isDeepStrictEqual(value, p));
 
+const isPlainMap = (value) => value != null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * The managed cameras into the document. Returns true when it changed.
+ * @param {import('yaml').Document} doc
+ * @param {object} before the document as plain JS, before any edit
+ * @param {Array<{ name: string, streams: Record<string, string[]>, section: object }>} cameras
+ * @param {string[]} forget managed cameras removed by the user
+ */
+function applyCameras(doc, before, cameras, forget) {
+  let edited = false;
+  const set = (path, value) => {
+    edited = setIfDifferent(doc, path, value) || edited;
+  };
+  const drop = (path) => {
+    if (doc.hasIn(path)) {
+      doc.deleteIn(path);
+      edited = true;
+    }
+  };
+  const managed = new Set(cameras.map((camera) => camera.name));
+  for (const name of forget) {
+    if (managed.has(name)) continue;
+    drop(['cameras', name]);
+    drop(['go2rtc', 'streams', name]);
+    drop(['go2rtc', 'streams', `${name}${SUB_STREAM_SUFFIX}`]);
+  }
+  for (const { name, streams, section } of cameras) {
+    for (const [stream, sources] of Object.entries(streams)) {
+      set(['go2rtc', 'streams', stream], sources);
+    }
+    const subName = `${name}${SUB_STREAM_SUFFIX}`;
+    if (!streams[subName]) drop(['go2rtc', 'streams', subName]);
+
+    const existing = isPlainMap(before.cameras) ? before.cameras[name] : undefined;
+    if (!isPlainMap(existing)) {
+      set(['cameras', name], section);
+      continue;
+    }
+    // An existing section: only the keys Gladys owns, so that what the user
+    // drew in the Frigate UI (zones, masks, filters) stays.
+    const base = ['cameras', name];
+    if (section.friendly_name !== undefined) set([...base, 'friendly_name'], section.friendly_name);
+    set([...base, 'ffmpeg', 'inputs'], section.ffmpeg.inputs);
+    // A detection the user turned off in the file stays off.
+    if (!isPlainMap(existing.detect) || existing.detect.enabled === undefined) {
+      set([...base, 'detect', 'enabled'], section.detect.enabled);
+    }
+    set([...base, 'detect', 'fps'], section.detect.fps);
+    if (section.detect.width !== undefined) {
+      set([...base, 'detect', 'width'], section.detect.width);
+      set([...base, 'detect', 'height'], section.detect.height);
+    }
+    set([...base, 'objects', 'track'], section.objects.track);
+    if (section.onvif) {
+      // Key by key: the user's autotracking settings stay.
+      for (const [key, value] of Object.entries(section.onvif)) {
+        set([...base, 'onvif', key], value);
+      }
+    } else {
+      // Gladys owns the endpoint: control credentials removed, endpoint removed.
+      drop([...base, 'onvif']);
+    }
+  }
+  // No empty go2rtc section left behind by a removal.
+  const streams = valueAt(doc, ['go2rtc', 'streams']);
+  if (isPlainMap(streams) && Object.keys(streams).length === 0) drop(['go2rtc', 'streams']);
+  const go2rtc = valueAt(doc, ['go2rtc']);
+  if (isPlainMap(go2rtc) && Object.keys(go2rtc).length === 0) drop(['go2rtc']);
+  return edited;
+}
+
+/**
+ * The camera and go2rtc stream names of a config.yml content (the cameras
+ * the user added in the Frigate UI are among them).
+ * @param {string} content
+ * @returns {{ cameras: string[], streams: string[] } | null} null: not valid YAML
+ */
+export function namesInFile(content) {
+  let parsed;
+  try {
+    parsed = parse(content ?? '') ?? {};
+  } catch {
+    return null;
+  }
+  const keys = (value) => (isPlainMap(value) ? Object.keys(value) : []);
+  return { cameras: keys(parsed.cameras), streams: keys(parsed.go2rtc?.streams) };
+}
+
 /**
  * @typedef {object} ManagedSettings
  * @property {null | { host: string, port: number, topicPrefix: string, user?: string,
@@ -170,6 +267,9 @@ const isPreset = (value) =>
  * @property {ReturnType<import('./detector.js').chooseDetector>} detector
  * @property {Record<string, number | null | undefined>} [retention] explicit
  *   Gladys values (null / undefined: not set in Gladys)
+ * @property {Array<{ name: string, streams: Record<string, string[]>, section: object }>} [cameras]
+ *   the managed cameras (./cameraSources.js buildCameraConfig)
+ * @property {string[]} [forget] managed cameras removed since the last generation
  */
 
 /**
@@ -235,6 +335,10 @@ export function renderConfig(content, settings, { created = false } = {}) {
   // (empty) section the user fills in the Frigate UI.
   if (created && before.cameras === undefined) {
     set(['cameras'], {});
+  }
+
+  if (settings.cameras?.length || settings.forget?.length) {
+    edited = applyCameras(doc, before, settings.cameras ?? [], settings.forget ?? []) || edited;
   }
 
   const next = edited ? String(doc) : content;

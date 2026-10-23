@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { ManagedConfigError } from '../src/frigate/errors.js';
+import { buildCameraConfig, resolveCamera } from '../src/frigate/managed/cameraSources.js';
 import {
   effectiveRetention,
+  namesInFile,
   renderConfig,
   retentionInFile,
   writeConfigFile,
@@ -243,4 +245,117 @@ test('writeConfigFile creates the file, then writes only when something changed'
   await writeFile(first.filePath, `version: 0.18-0\n${await readFile(first.filePath, 'utf8')}`);
   const migrated = await writeConfigFile({ configDir, settings: settings({ mqtt }) });
   assert.equal(migrated.changed, false);
+});
+
+// ---- Managed cameras --------------------------------------------------------
+
+const managedCamera = (name, record) =>
+  buildCameraConfig(
+    resolveCamera(name, {
+      label: name,
+      model: 'tapo-wired',
+      host: '192.168.1.30',
+      username: 'u',
+      password: 'p',
+      ...record,
+    }),
+  );
+
+test('a managed camera gets its go2rtc streams and its whole section', () => {
+  const garden = managedCamera('garden', { objects: ['person', 'dog'] });
+  const { content, changed } = render(USER_FILE, { cameras: [garden] });
+  assert.equal(changed, true);
+  const after = parse(content);
+  assert.deepEqual(after.go2rtc.streams.garden, ['rtsp://u:p@192.168.1.30:554/stream1']);
+  assert.deepEqual(after.go2rtc.streams.garden_sub, ['rtsp://u:p@192.168.1.30:554/stream2']);
+  assert.deepEqual(after.cameras.garden, garden.section);
+  // The camera and the stream added in the Frigate UI are left as they are.
+  const before = parse(USER_FILE);
+  assert.deepEqual(after.cameras.porch, before.cameras.porch);
+  assert.deepEqual(after.go2rtc.streams.porch, before.go2rtc.streams.porch);
+  assert.match(content, /# My cameras, set in the Frigate UI/);
+
+  const again = render(content, { cameras: [garden] });
+  assert.equal(again.changed, false, 'idempotent');
+  assert.equal(again.content, content);
+});
+
+test('an edited managed camera keeps what the user drew in the Frigate UI', () => {
+  const first = render('', { cameras: [managedCamera('garden')] }, { created: true }).content;
+  // The user draws a zone, a mask and an object filter in the Frigate UI.
+  const doc = parse(first);
+  doc.cameras.garden.zones = { lawn: { coordinates: '0.1,0.2,0.3,0.4' } };
+  doc.cameras.garden.motion = { mask: '0,0,10,10' };
+  doc.cameras.garden.objects.filters = { person: { min_score: 0.6 } };
+  doc.cameras.garden.detect.stationary = { interval: 50 };
+  doc.cameras.garden.onvif.autotracking = { enabled: true };
+  const edited = `${JSON.stringify(doc)}\n`;
+
+  const updated = managedCamera('garden', {
+    host: '192.168.1.31',
+    objects: ['person', 'cat'],
+    detectFps: 3,
+    label: 'Garden',
+  });
+  const { content } = render(edited, { cameras: [updated] });
+  const camera = parse(content).cameras.garden;
+  assert.deepEqual(camera.zones, doc.cameras.garden.zones, 'zones kept');
+  assert.deepEqual(camera.motion, doc.cameras.garden.motion, 'masks kept');
+  assert.deepEqual(camera.objects, {
+    track: ['person', 'cat'],
+    filters: { person: { min_score: 0.6 } },
+  });
+  assert.deepEqual(camera.detect, { enabled: true, fps: 3, stationary: { interval: 50 } });
+  assert.equal(camera.friendly_name, 'Garden');
+  assert.deepEqual(camera.onvif, {
+    host: '192.168.1.31',
+    port: 2020,
+    user: 'u',
+    password: 'p',
+    autotracking: { enabled: true },
+  });
+  assert.deepEqual(parse(content).go2rtc.streams.garden, ['rtsp://u:p@192.168.1.31:554/stream1']);
+});
+
+test('a managed camera: detection turned off in the file stays off; stale ONVIF and sub stream go', () => {
+  const first = render('', { cameras: [managedCamera('garden')] }, { created: true }).content;
+  const doc = parse(first);
+  doc.cameras.garden.detect.enabled = false;
+  const single = managedCamera('garden', { subPath: '', username: '', password: '' });
+  const { content } = render(`${JSON.stringify(doc)}\n`, { cameras: [single] });
+  const after = parse(content);
+  assert.equal(after.cameras.garden.detect.enabled, false);
+  assert.equal(after.cameras.garden.onvif, undefined, 'no control credentials: no endpoint');
+  assert.deepEqual(after.cameras.garden.ffmpeg.inputs, [
+    { path: 'rtsp://127.0.0.1:8554/garden', roles: ['detect', 'record'] },
+  ]);
+  assert.deepEqual(Object.keys(after.go2rtc.streams), ['garden'], 'the _sub stream is removed');
+});
+
+test('a removed managed camera loses its section and streams, the UI cameras stay', () => {
+  const garden = managedCamera('garden');
+  const withGarden = render(USER_FILE, { cameras: [garden] }).content;
+  const { content, changed } = render(withGarden, { cameras: [], forget: ['garden'] });
+  assert.equal(changed, true);
+  const after = parse(content);
+  assert.equal(after.cameras.garden, undefined);
+  assert.equal(after.go2rtc.streams.garden, undefined);
+  assert.equal(after.go2rtc.streams.garden_sub, undefined);
+  assert.deepEqual(after.cameras.porch, parse(USER_FILE).cameras.porch, 'the UI camera stays');
+  // forget is ignored for a name still managed.
+  assert.equal(render(withGarden, { cameras: [garden], forget: ['garden'] }).changed, false);
+});
+
+test('removing the last managed camera leaves no empty go2rtc section', () => {
+  const created = render('', { cameras: [managedCamera('garden')] }, { created: true }).content;
+  const { content } = render(created, { cameras: [], forget: ['garden'] });
+  const after = parse(content);
+  assert.equal(after.go2rtc, undefined);
+  assert.deepEqual(after.cameras, {});
+});
+
+test('namesInFile lists the cameras and streams of config.yml', () => {
+  assert.deepEqual(namesInFile(USER_FILE), { cameras: ['porch'], streams: ['porch'] });
+  assert.deepEqual(namesInFile(''), { cameras: [], streams: [] });
+  assert.equal(namesInFile('a: [b'), null);
 });

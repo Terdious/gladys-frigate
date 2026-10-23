@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Managed mode: cameras are added from Gladys with the new **Cameras**
+  button — its operation adds, edits, removes or lists the cameras. A model
+  catalog fills in the stream settings: TP-Link Tapo wired (C100…C520WS,
+  camera account) and battery/solar (C400…D230, cloud password, SHA256
+  variant), Reolink RLC / E1 / Duo and Argus through the Home Hub, D-Link
+  DCS-5020L (MJPEG), DCS-8302LH and DCS-8635LH (mydlink local access), a
+  generic RTSP camera, an ONVIF camera and a custom go2rtc source. The
+  answer gives the note of the model (camera account, mydlink "Local
+  Access" and PIN, 2-3 connections limit, battery cameras to keep
+  mains-powered) and the next steps; Frigate restarts to apply the change,
+  then the camera appears in the Discover tab. Two streams per camera
+  (recording on the main one, detection on the light one) through the go2rtc
+  of Frigate, objects to detect, detection frames per second, ONVIF endpoint
+  for PTZ. Zones and masks drawn in the Frigate UI are kept, and the cameras
+  added there are never touched. Test the connection gives the number of
+  cameras added from Gladys.
+
 ## [0.4.0] - 2026-10-23
 
 ### Added
