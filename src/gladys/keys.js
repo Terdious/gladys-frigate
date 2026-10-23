@@ -29,4 +29,9 @@ export const MANIFEST_ACTIONS = Object.freeze({
   // The Frigate UI address and its admin account: the result of an action
   // is only shown to the admin who pressed the button.
   SHOW_CREDENTIALS: 'show_credentials',
+  // Troubleshooting (both modes): a report to share, the last real-time
+  // messages, a pre-filled GitHub issue for the camera catalog.
+  DIAGNOSTICS: 'diagnostics',
+  MQTT_DEBUG: 'mqtt_debug',
+  PROPOSE_CAMERA: 'propose_camera',
 });

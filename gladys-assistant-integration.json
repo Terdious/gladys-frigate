@@ -552,6 +552,125 @@
         "fr": "Mode géré : l'adresse de l'interface Frigate et son compte admin, affichés pour vous seul."
       },
       "timeout_seconds": 30
+    },
+    {
+      "key": "diagnostics",
+      "label": {
+        "en": "Diagnostics report",
+        "fr": "Rapport de diagnostic"
+      },
+      "description": {
+        "en": "Versions, real-time feed, cameras, detectors, storage, certificates and the Frigate container, to share in a support request (no password inside).",
+        "fr": "Versions, flux temps réel, caméras, détecteurs, stockage, certificats et conteneur Frigate, à partager dans une demande d'aide (sans mot de passe)."
+      },
+      "timeout_seconds": 30
+    },
+    {
+      "key": "mqtt_debug",
+      "label": {
+        "en": "Show the last real-time messages",
+        "fr": "Afficher les derniers messages temps réel"
+      },
+      "description": {
+        "en": "The last 50 messages received from Frigate (MQTT or WebSocket), newest first.",
+        "fr": "Les 50 derniers messages reçus de Frigate (MQTT ou WebSocket), du plus récent au plus ancien."
+      },
+      "timeout_seconds": 10
+    },
+    {
+      "key": "propose_camera",
+      "label": {
+        "en": "Propose a camera to the catalog",
+        "fr": "Proposer une caméra au catalogue"
+      },
+      "description": {
+        "en": "Builds a pre-filled GitHub issue link that you open and submit yourself: the integration sends nothing.",
+        "fr": "Prépare un lien de ticket GitHub pré-rempli que vous ouvrez et envoyez vous-même : l'intégration n'envoie rien."
+      },
+      "timeout_seconds": 10,
+      "fields": [
+        {
+          "key": "brand",
+          "type": "string",
+          "label": {
+            "en": "Brand",
+            "fr": "Marque"
+          },
+          "placeholder": {
+            "en": "e.g. Reolink",
+            "fr": "ex. Reolink"
+          },
+          "required": true
+        },
+        {
+          "key": "model",
+          "type": "string",
+          "label": {
+            "en": "Model",
+            "fr": "Modèle"
+          },
+          "placeholder": {
+            "en": "e.g. RLC-510A",
+            "fr": "ex. RLC-510A"
+          },
+          "required": true
+        },
+        {
+          "key": "source_type",
+          "type": "select",
+          "label": {
+            "en": "Stream type",
+            "fr": "Type de flux"
+          },
+          "default": "rtsp",
+          "options": [
+            {
+              "value": "rtsp",
+              "label": {
+                "en": "RTSP",
+                "fr": "RTSP"
+              }
+            },
+            {
+              "value": "tapo",
+              "label": {
+                "en": "Tapo (TP-Link)",
+                "fr": "Tapo (TP-Link)"
+              }
+            },
+            {
+              "value": "onvif",
+              "label": {
+                "en": "ONVIF",
+                "fr": "ONVIF"
+              }
+            },
+            {
+              "value": "mjpeg",
+              "label": {
+                "en": "MJPEG / HTTP",
+                "fr": "MJPEG / HTTP"
+              }
+            },
+            {
+              "value": "custom",
+              "label": {
+                "en": "Other (go2rtc source)",
+                "fr": "Autre (source go2rtc)"
+              }
+            }
+          ]
+        },
+        {
+          "key": "notes",
+          "type": "string",
+          "label": {
+            "en": "Notes (stream paths, settings that work; no password)",
+            "fr": "Notes (chemins de flux, réglages qui marchent ; sans mot de passe)"
+          },
+          "required": false
+        }
+      ]
     }
   ],
   "scene_triggers": [
