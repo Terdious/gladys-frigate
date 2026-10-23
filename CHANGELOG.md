@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Fork of LM1LC3N7/gladys-frigate: the image is published as
+  `ghcr.io/terdious/gladys-frigate`; roadmap of the managed mode (Frigate as a
+  Gladys sub-container), camera management, live view, PTZ and diagnostics in
+  `ROADMAP.md`.
+
 ## [0.3.3] - 2026-10-13
 
 ### Changed

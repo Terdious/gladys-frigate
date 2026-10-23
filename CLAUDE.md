@@ -1,10 +1,20 @@
 # CLAUDE.md
 
 Frigate NVR external integration for Gladys Assistant (Docker container, JS
-SDK). Read **[TODO.md](./TODO.md) first**: status, decisions already taken
-and the detailed plan of the next milestones.
+SDK). Fork of LM1LC3N7/gladys-frigate adding a **managed mode** (Frigate as a
+Gladys sub-container). Read **[ROADMAP.md](./ROADMAP.md) first** (plan,
+principles, core limits), then [TODO.md](./TODO.md) for the upstream
+decisions, which still hold.
 
 ## Rules
+
+- Two modes, one integration: `remote` (existing Frigate, upstream behavior,
+  never regressed) and `managed` (sub-container declared in the manifest,
+  `start: manual`, driven through the SDK `getContainers` / `startContainer` /
+  `stopContainer` / `restartContainer` / `onHardwareUpdated`). Anything that
+  needs a core change is documented in `ROADMAP.md` and degrades gracefully.
+- Generated Frigate configuration is idempotent and preserves what the user
+  set in the Frigate UI; it lives under `/data/containers/frigate/config/`.
 
 - Node.js >= 20.18.1 at runtime (the image ships 24), JavaScript ESM with
   JSDoc, no TypeScript build. Dev tooling needs more: ESLint 10 wants Node
