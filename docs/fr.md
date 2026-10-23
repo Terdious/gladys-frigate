@@ -159,21 +159,21 @@ Le **nom Frigate** d'une caméra est tiré de son nom une fois pour toutes
 (« Entrée nord » → `entree_nord`) : il identifie l'appareil Gladys pour
 toujours. Modifier le nom ensuite ne change que le nom affiché par Frigate.
 
-| Marque       | Modèles                                                                           | Quoi saisir                                                                                               | Note                                                                                                                                                                              |
-| ------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TP-Link Tapo | filaires : C100, C110, C120, C200, C210, C225, C310, C320WS, C325WB, C500, C520WS | IP, le **compte caméra** de l'app Tapo (réglages de la caméra → Paramètres avancés → Compte de la caméra) | Pas votre compte cloud TP-Link. Flux `stream1` / `stream2`, ONVIF (PTZ) sur le port 2020.                                                                                         |
-| TP-Link Tapo | batterie/solaire : C400, C420, C425, C460, C610, C645D, C660, D230                | IP, le mot de passe de votre compte **cloud TP-Link** (pas d'utilisateur)                                 | Pas de RTSP : `tapo://` de go2rtc, flux léger 640×360. « 401 Unauthorized » dans les logs Frigate : modifiez la caméra avec la variante d'authentification **SHA256**.            |
-| Reolink      | RLC, E1, Duo (RTSP)                                                               | IP, le compte de la caméra                                                                                | Chemins `h264Preview_01_main` / `h264Preview_01_sub`, ONVIF sur le port 8000. Activez RTSP / ONVIF dans l'app Reolink s'ils sont désactivés.                                      |
-| Reolink      | Argus et autres caméras sur batterie (Home Hub)                                   | IP **du Home Hub**, son compte                                                                            | Canal 1 par défaut (`Preview_01_main` / `Preview_01_sub`) : pour la 2e caméra du hub, indiquez les chemins `Preview_02_main` / `Preview_02_sub`.                                  |
-| D-Link       | DCS-5020L                                                                         | IP, un compte utilisateur de la caméra                                                                    | Pas de RTSP : flux MJPEG (`video.cgi`, port 80) réencodé en H264. Pan/tilt et mode nuit (version ultérieure) : le compte **admin** comme compte de contrôle.                      |
-| D-Link       | DCS-8302LH, DCS-8635LH (mydlink)                                                  | IP, utilisateur `admin`, mot de passe = **code PIN** de la caméra                                         | Activez l'**Accès local** dans l'app mydlink, puis débranchez la caméra quelques secondes. PIN complet refusé : essayez ses 6 derniers chiffres. DCS-8635LH : un seul flux 1080p. |
-| Toutes       | Caméra RTSP (générique)                                                           | IP, compte, le **chemin** du flux principal (et d'un flux léger)                                          | Par exemple `stream1`, `live/ch0`, `cam/realmonitor?channel=1&subtype=0`.                                                                                                         |
-| Toutes       | Caméra ONVIF                                                                      | IP, compte, port ONVIF                                                                                    | go2rtc demande son flux à la caméra ; le premier profil est utilisé (parfois en H265 : préférez alors le RTSP).                                                                   |
-| Toutes       | Source go2rtc personnalisée                                                       | la source, telle que go2rtc la lit (`rtsp://`, `ffmpeg:`, `tapo://`, `homekit://`…)                       | Saisie telle quelle : encodez les caractères spéciaux d'un mot de passe (`@` → `%40`).                                                                                            |
+| Marque       | Modèles                                                                           | Quoi saisir                                                                                               | Note                                                                                                                                                                                     |
+| ------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TP-Link Tapo | filaires : C100, C110, C120, C200, C210, C225, C310, C320WS, C325WB, C500, C520WS | IP, le **compte caméra** de l'app Tapo (réglages de la caméra → Paramètres avancés → Compte de la caméra) | Pas votre compte cloud TP-Link. Flux `stream1` / `stream2`, ONVIF (PTZ) sur le port 2020.                                                                                                |
+| TP-Link Tapo | batterie/solaire : C400, C420, C425, C460, C610, C645D, C660, D230                | IP, le mot de passe de votre compte **cloud TP-Link** (pas d'utilisateur)                                 | Pas de RTSP : `tapo://` de go2rtc, flux léger 640×360. « 401 Unauthorized » dans les logs Frigate : modifiez la caméra avec la variante d'authentification **SHA256**.                   |
+| Reolink      | RLC, E1, Duo (RTSP)                                                               | IP, le compte de la caméra                                                                                | Chemins `h264Preview_01_main` / `h264Preview_01_sub`, ONVIF sur le port 8000. Activez RTSP / ONVIF dans l'app Reolink s'ils sont désactivés.                                             |
+| Reolink      | Argus et autres caméras sur batterie (Home Hub)                                   | IP **du Home Hub**, son compte                                                                            | Canal 1 par défaut (`Preview_01_main` / `Preview_01_sub`) : pour la 2e caméra du hub, indiquez les chemins `Preview_02_main` / `Preview_02_sub`.                                         |
+| D-Link       | DCS-5020L                                                                         | IP, un compte utilisateur de la caméra                                                                    | Pas de RTSP : flux MJPEG (`video.cgi`, port 80) réencodé en H264. Pan/tilt et interrupteur de mode nuit (IR) : le compte **admin** comme compte de contrôle (voir « Contrôles D-Link »). |
+| D-Link       | DCS-8302LH, DCS-8635LH (mydlink)                                                  | IP, utilisateur `admin`, mot de passe = **code PIN** de la caméra                                         | Activez l'**Accès local** dans l'app mydlink, puis débranchez la caméra quelques secondes. PIN complet refusé : essayez ses 6 derniers chiffres. DCS-8635LH : un seul flux 1080p.        |
+| Toutes       | Caméra RTSP (générique)                                                           | IP, compte, le **chemin** du flux principal (et d'un flux léger)                                          | Par exemple `stream1`, `live/ch0`, `cam/realmonitor?channel=1&subtype=0`.                                                                                                                |
+| Toutes       | Caméra ONVIF                                                                      | IP, compte, port ONVIF                                                                                    | go2rtc demande son flux à la caméra ; le premier profil est utilisé (parfois en H265 : préférez alors le RTSP).                                                                          |
+| Toutes       | Source go2rtc personnalisée                                                       | la source, telle que go2rtc la lit (`rtsp://`, `ffmpeg:`, `tapo://`, `homekit://`…)                       | Saisie telle quelle : encodez les caractères spéciaux d'un mot de passe (`@` → `%40`).                                                                                                   |
 
 **Champs avancés** (facultatifs ; vide = le réglage du modèle) : chemins des
 flux principal et secondaire, port du flux (RTSP, ou HTTP pour le MJPEG), port
-ONVIF et compte de contrôle (PTZ, par défaut le compte de la caméra), variante
+ONVIF et compte de contrôle (PTZ et contrôles D-Link, par défaut le compte de la caméra), variante
 d'authentification Tapo, source personnalisée et source secondaire
 personnalisée. Saisissez `-` dans un champ texte pour le vider — par exemple
 `-` comme chemin secondaire n'ouvre qu'une connexion à la caméra.
@@ -376,6 +376,7 @@ porte ce que sa configuration Frigate active :
 | Statut de revue                      | none (aucune), detection ou alert.                                                                                                           |
 | Capteurs de zone                     | Avec l'option « Capteurs d'occupation par zone » : un capteur de présence par zone et par objet.                                             |
 | Mouvement, Position (Preset)         | Caméras avec une section ONVIF dans Frigate : orientation, zoom et presets (voir « Caméras PTZ »).                                           |
+| Mode nuit (IR) (Night mode)          | D-Link DCS-5020L ajoutée depuis Gladys : infrarouge forcé (allumé) ou automatique (éteint) (voir « Contrôles D-Link »).                      |
 
 Un interrupteur n'est affiché comme changé qu'une fois confirmé par Frigate.
 Sans broker MQTT, le WebSocket de Frigate n'accepte les commandes que d'un
@@ -455,6 +456,35 @@ reste sans ses commandes dans l'onglet Découverte jusqu'à la lecture
 suivante ; avec une version de Gladys qui ne connaît pas encore les
 fonctionnalités PTZ, les caméras sont listées sans elles (un avertissement
 dans les logs le signale).
+
+### Contrôles D-Link
+
+La D-Link DCS-5020L n'a pas d'ONVIF : elle s'oriente et passe en vision
+nocturne par ses propres commandes HTTP, que l'intégration envoie **à la
+caméra elle-même** (pas par Frigate). **Mode géré uniquement** : il faut
+l'adresse de la caméra et son compte admin, que l'intégration ne connaît que
+pour une caméra ajoutée avec le bouton **Caméras**. En mode distant, Gladys
+ne sait pas où est la caméra : aucun contrôle D-Link.
+
+- **Mouvement** : gauche / droite, haut / bas. Chaque appui est **un pas de
+  5°** qui s'arrête de lui-même : pas de mouvement tant que le bouton est
+  maintenu, appuyez de nouveau pour aller plus loin ; le bouton d'arrêt
+  n'envoie rien. Pas de zoom (la caméra n'a pas de moteur de zoom) ni de
+  preset.
+- **Mode nuit (IR)**, un interrupteur : allumé = infrarouge forcé, éteint =
+  automatique (la caméra choisit jour ou nuit). La caméra ne renvoie rien :
+  l'interrupteur montre la dernière valeur réglée par Gladys, pas un
+  changement fait dans l'app D-Link.
+- **Compte admin** : ces commandes demandent le compte **admin** de la
+  caméra (un compte utilisateur suffit au flux mais est refusé). Saisissez-le
+  comme **Utilisateur de contrôle** et **Mot de passe de contrôle** (champs
+  avancés du bouton Caméras) : sinon, le compte du flux est utilisé. Une
+  commande sans aucun compte de contrôle échoue avec « control credentials
+  (admin account) missing: edit the camera » ; un compte refusé est signalé
+  aussi. Les identifiants ne sont jamais écrits dans les logs.
+
+Une DCS-5020L ajoutée avant cette version affiche **Mettre à jour** dans
+l'onglet Découverte : cliquez dessus pour ajouter les contrôles.
 
 ## Scènes
 
@@ -626,6 +656,7 @@ passe ni de jeton.
 | Pas d'image sur le tableau de bord                      | La caméra est allumée dans Frigate et dans Gladys ; attendez une minute après l'avoir ajoutée.                                                                     |
 | Un interrupteur échoue (« did not confirm », « admin ») | Sans broker, Frigate 0.17+ n'accepte les commandes que d'un compte admin ; avec un broker, son ACL doit autoriser `frigate/+/+/set`.                               |
 | Une caméra PTZ ne bouge pas                             | Avec un broker, son ACL doit autoriser `frigate/+/ptz` ; sinon les logs de Frigate (ONVIF). Pas de commande PTZ : **Rafraîchir les caméras**.                      |
+| Une caméra D-Link refuse le pan/tilt ou le mode nuit    | Modifiez la caméra avec son compte **admin** comme utilisateur et mot de passe de contrôle (mode géré uniquement, voir « Contrôles D-Link »).                      |
 | « Flux temps réel arrêté »                              | Le broker a refusé le compte ou le certificat : corrigez, puis **Tester la connexion**.                                                                            |
 | Badge de caméra « injoignable »                         | Frigate est arrêté ou redémarre, ou le flux de la caméra est perdu depuis 30 s (vérifiez la caméra dans Frigate).                                                  |
 | Une scène ne se déclenche pas                           | La confiance minimale et le cooldown (Options) ; les noms d'objet et de zone sont ceux de Frigate (`person`, pas `Personne`) ; les logs montrent chaque incident.  |

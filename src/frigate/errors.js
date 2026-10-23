@@ -120,3 +120,30 @@ export class CamerasStoreError extends FrigateError {
     super('The managed cameras file (managed/cameras.json) is not valid JSON', options);
   }
 }
+
+/**
+ * A D-Link HTTP control (pan/tilt, night mode) cannot be sent: no control
+ * account (user and password) is known for the camera. Never sent at all.
+ */
+export class DlinkCredentialsError extends FrigateError {
+  constructor() {
+    super('The D-Link control credentials are missing');
+  }
+}
+
+/** The D-Link camera answered a control with an unexpected HTTP status (401: not admin). */
+export class DlinkHttpError extends FrigateError {
+  constructor(status) {
+    super(`The D-Link camera answered HTTP ${status}`);
+    this.status = status;
+  }
+}
+
+/** The D-Link camera did not answer a control (DNS, refused connection, timeout). */
+export class DlinkUnreachableError extends FrigateError {
+  /** @param {string} code a Node error code (ECONNREFUSED…) or 'TIMEOUT' */
+  constructor(code, options) {
+    super(`The D-Link camera is unreachable (${code})`, options);
+    this.code = code;
+  }
+}

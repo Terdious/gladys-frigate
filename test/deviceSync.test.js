@@ -4,6 +4,11 @@ import { EventEmitter } from 'node:events';
 import { readCapabilities } from '../src/frigate/capabilities.js';
 import { CAMERA_MOVE } from '../src/frigate/ptz.js';
 import { parseMessage } from '../src/frigate/topics.js';
+import {
+  DlinkCredentialsError,
+  DlinkHttpError,
+  DlinkUnreachableError,
+} from '../src/frigate/errors.js';
 import { CommandError, PTZ_WATCHDOG_MS, createDeviceSync } from '../src/gladys/deviceSync.js';
 import { buildDevices } from '../src/gladys/discovery.js';
 import { FRIGATE_CONFIG, FRIGATE_CONFIG_PTZ, FRONT_PTZ_INFO } from './helpers/fakeFrigate.js';
@@ -30,6 +35,9 @@ function setup({
   stats,
   created = ['front'],
   capabilities = readCapabilities(version, FRIGATE_CONFIG),
+  controlsOf,
+  dlinkTargetOf,
+  sendDlink,
 } = {}) {
   const states = [];
   const transports = [];
@@ -37,7 +45,7 @@ function setup({
   let statsReads = 0;
   const gladys = {
     ...gladysIds,
-    devices: buildDevices(gladysIds, capabilities).filter((device) =>
+    devices: buildDevices(gladysIds, capabilities, { controlsOf }).filter((device) =>
       created.includes(device.params[0].value),
     ),
     publishStates: async (batch) => states.push(...batch),
@@ -58,6 +66,8 @@ function setup({
     images: { pushImage: async (device) => pushed.push(device.external_id) },
     logger: { info() {}, warn: (text) => logs.push(text) },
     confirmTimeoutMs: 50,
+    ...(dlinkTargetOf ? { dlinkTargetOf } : {}),
+    ...(sendDlink ? { sendDlink } : {}),
     debounceMs: 20,
     flushMs: 5,
   });
@@ -331,4 +341,146 @@ test('closing stops a camera still moving at once and clears its watchdog', asyn
   t.mock.timers.tick(PTZ_WATCHDOG_MS * 2);
   await settle();
   assert.equal(feed.published.length, 2);
+});
+
+// ---- D-Link HTTP cameras (managed mode) ----------------------------------------
+
+const DESK = { host: '192.168.1.50', port: 80, username: 'admin', password: 'pin' };
+
+/** The front camera as a managed DCS-5020L; `sent` records the D-Link requests. */
+function dlinkSetup({ target = DESK, send } = {}) {
+  const sent = [];
+  const context = setup({
+    controlsOf: (name) => (name === 'front' ? { ptz: true, nightMode: true } : null),
+    dlinkTargetOf: async (camera) => (camera === 'front' ? target : null),
+    sendDlink:
+      send ??
+      (async (to, request) => {
+        sent.push([to, request]);
+      }),
+  });
+  return { ...context, sent };
+}
+
+test('D-Link: a move is one single-step request, routed by the device param', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { sync, gladys, feed, sent } = dlinkSetup();
+  t.after(() => sync.close());
+  const [device] = gladys.devices;
+  await sync.setValue(device, feature('front', 'move'), CAMERA_MOVE.PAN_LEFT);
+  // A slim device (external id only): the param of the created device.
+  await sync.setValue({ external_id: device.external_id }, feature('front', 'move'), '3');
+  assert.deepEqual(
+    sent.map(([to, request]) => [to, request.path, request.body]),
+    [
+      [
+        DESK,
+        '/pantiltcontrol.cgi',
+        'PanSingleMoveDegree=5&TiltSingleMoveDegree=5&PanTiltSingleMove=3',
+      ],
+      [
+        DESK,
+        '/pantiltcontrol.cgi',
+        'PanSingleMoveDegree=5&TiltSingleMoveDegree=5&PanTiltSingleMove=1',
+      ],
+    ],
+  );
+  // STOP (the release of a pad button) sends nothing, and no watchdog runs.
+  await sync.setValue(device, feature('front', 'move'), CAMERA_MOVE.STOP);
+  t.mock.timers.tick(PTZ_WATCHDOG_MS * 2);
+  await settle();
+  assert.equal(sent.length, 2);
+  assert.deepEqual(feed.published, [], 'nothing goes through Frigate');
+});
+
+test('D-Link: zoom and unknown values are refused, nothing sent', async (t) => {
+  const { sync, gladys, sent } = dlinkSetup();
+  t.after(() => sync.close());
+  const [device] = gladys.devices;
+  for (const value of [CAMERA_MOVE.ZOOM_IN, CAMERA_MOVE.ZOOM_OUT]) {
+    await assert.rejects(
+      sync.setValue(device, feature('front', 'move'), value),
+      (err) =>
+        err instanceof CommandError && /zoom is not available on this camera/.test(err.message),
+    );
+  }
+  await assert.rejects(sync.setValue(device, feature('front', 'move'), 9), /not a camera movement/);
+  assert.equal(sent.length, 0);
+});
+
+test('D-Link: the night mode switch sends the daynight request and publishes its state', async (t) => {
+  const { sync, gladys, sent, states } = dlinkSetup();
+  t.after(() => sync.close());
+  const [device] = gladys.devices;
+  const nightMode = feature('front', 'night-mode');
+  await sync.setValue(device, nightMode, 1);
+  await wait(20);
+  await sync.setValue(device, nightMode, 0);
+  await wait(20);
+  assert.deepEqual(
+    sent.map(([, request]) => request.path),
+    [
+      '/daynight.cgi?DayNightMode=3&ConfigReboot=no',
+      '/daynight.cgi?DayNightMode=0&ConfigReboot=no',
+    ],
+  );
+  assert.deepEqual(states, [
+    { device_feature_external_id: nightMode.external_id, state: 1 },
+    { device_feature_external_id: nightMode.external_id, state: 0 },
+  ]);
+});
+
+test('D-Link: failures are explicit, never with a credential, and publish no state', async (t) => {
+  const failing = (err) =>
+    dlinkSetup({
+      send: async () => {
+        throw err;
+      },
+    });
+  const cases = [
+    [new DlinkCredentialsError(), /control credentials \(admin account\) missing: edit the camera/],
+    [new DlinkHttpError(401), /refused the control account: .*admin account/],
+    [new DlinkHttpError(500), /answered HTTP 500/],
+    [new DlinkUnreachableError('TIMEOUT'), /does not answer: .*TIMEOUT/],
+  ];
+  for (const [err, reason] of cases) {
+    const { sync, gladys, states } = failing(err);
+    t.after(() => sync.close());
+    await assert.rejects(
+      sync.setValue(gladys.devices[0], feature('front', 'night-mode'), 1),
+      (e) => {
+        assert.ok(e instanceof CommandError);
+        assert.match(e.message, reason);
+        assert.ok(!e.message.includes(DESK.password));
+        return true;
+      },
+    );
+    await wait(20);
+    assert.deepEqual(states, []);
+  }
+  // No managed record (remote mode, a camera added in the Frigate UI), no address.
+  const unmanaged = dlinkSetup({ target: null });
+  t.after(() => unmanaged.sync.close());
+  await assert.rejects(
+    unmanaged.sync.setValue(unmanaged.gladys.devices[0], feature('front', 'move'), 1),
+    /only available in managed mode/,
+  );
+  const noHost = dlinkSetup({ target: { ...DESK, host: '' } });
+  t.after(() => noHost.sync.close());
+  await assert.rejects(
+    noHost.sync.setValue(noHost.gladys.devices[0], feature('front', 'night-mode'), 0),
+    /address of front is missing/,
+  );
+  assert.equal(unmanaged.sent.length + noHost.sent.length, 0);
+});
+
+test('D-Link: a camera without the param keeps its moves on Frigate (ONVIF)', async (t) => {
+  const { sync, feed } = setup({
+    capabilities: ptzCapabilities(),
+    dlinkTargetOf: async () => DESK,
+    sendDlink: async () => assert.fail('no D-Link request'),
+  });
+  t.after(() => sync.close());
+  await sync.setValue({}, feature('front', 'move'), CAMERA_MOVE.PAN_LEFT);
+  assert.deepEqual(feed.published, [[PTZ_TOPIC, 'MOVE_LEFT']]);
 });
